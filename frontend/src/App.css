@@ -172,6 +172,62 @@
   color: #35566d;
 }
 
+.ticket-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 0.62rem;
+}
+
+.ticket-field {
+  display: grid;
+  gap: 0.24rem;
+  color: #5f7d92;
+  font-size: 0.84rem;
+}
+
+.ticket-field.full-width {
+  grid-column: 1 / -1;
+}
+
+.ticket-field input,
+.ticket-field select,
+.ticket-field textarea {
+  border: 1px solid #cfdae5;
+  border-radius: 9px;
+  padding: 0.52rem 0.58rem;
+  font: inherit;
+  color: #2a4e68;
+  background: #f9fcff;
+}
+
+.ticket-field textarea {
+  resize: vertical;
+}
+
+.ticket-field input[aria-invalid='true'],
+.ticket-field select[aria-invalid='true'],
+.ticket-field textarea[aria-invalid='true'] {
+  border-color: #d35353;
+  background: #fff5f5;
+}
+
+.field-hint {
+  color: #6d8797;
+  font-size: 0.76rem;
+}
+
+.file-list {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.2rem;
+  color: #3b5f76;
+}
+
+.ticket-submit {
+  width: fit-content;
+}
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -423,7 +479,8 @@ tbody tr:hover {
 }
 
 @media (max-width: 720px) {
-  .form-grid {
+  .form-grid,
+  .ticket-form {
     grid-template-columns: 1fr;
   }
 }

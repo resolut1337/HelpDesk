@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react'
+import { useRef, useState } from 'react'
 import './App.css'
 
 const navItems = [
@@ -27,6 +27,15 @@ const profileActivity = [
   'Role was changed to Support Agent.',
 ]
 
+const ticketCategories = [
+  'Access Issues',
+  'Billing',
+  'Software Bug',
+  'Hardware',
+  'Network',
+  'Other',
+]
+
 const initialLoginForm = {
   email: '',
   password: '',
@@ -39,10 +48,42 @@ const initialRegisterForm = {
   confirmPassword: '',
 }
 
+const initialTicketForm = {
+  subject: '',
+  description: '',
+  category: '',
+  files: [],
+}
+
+const maxFiles = 5
+const maxFileSizeMb = 10
+const maxFileSizeBytes = maxFileSizeMb * 1024 * 1024
+
 const demoTickets = [
-  { id: 'HD-4108', title: 'Unable to login from VPN', status: 'open', updated: '5 min ago' },
-  { id: 'HD-4107', title: 'Mailbox sync delay', status: 'pending', updated: '20 min ago' },
-  { id: 'HD-4103', title: 'Issue with Slack notifications', status: 'resolved', updated: '1 h ago' },
+  {
+    id: 'HD-4108',
+    title: 'Unable to login from VPN',
+    status: 'open',
+    updated: '5 min ago',
+    category: 'Access Issues',
+    attachmentsCount: 1,
+  },
+  {
+    id: 'HD-4107',
+    title: 'Mailbox sync delay',
+    status: 'pending',
+    updated: '20 min ago',
+    category: 'Software Bug',
+    attachmentsCount: 0,
+  },
+  {
+    id: 'HD-4103',
+    title: 'Issue with Slack notifications',
+    status: 'resolved',
+    updated: '1 h ago',
+    category: 'Network',
+    attachmentsCount: 2,
+  },
 ]
 
 function getInitials(name) {
@@ -112,7 +153,166 @@ function validateRegisterForm(form) {
   return errors
 }
 
-function HomeView({ onOpenAccount, tickets, user }) {
+function validateTicketForm(form) {
+  const errors = {}
+
+  if (!form.subject.trim()) {
+    errors.subject = 'Subject is required.'
+  } else if (form.subject.trim().length < 5) {
+    errors.subject = 'Subject must be at least 5 characters long.'
+  }
+
+  if (!form.description.trim()) {
+    errors.description = 'Description is required.'
+  } else if (form.description.trim().length < 15) {
+    errors.description = 'Description must be at least 15 characters long.'
+  }
+
+  if (!form.category) {
+    errors.category = 'Please choose a category.'
+  }
+
+  if (form.files.length > maxFiles) {
+    errors.files = `You can upload up to ${maxFiles} files.`
+  } else {
+    const largeFile = form.files.find((file) => file.size > maxFileSizeBytes)
+    if (largeFile) {
+      errors.files = `File "${largeFile.name}" exceeds ${maxFileSizeMb}MB.`
+    }
+  }
+
+  return errors
+}
+
+function TicketCreationForm({ onCreateTicket }) {
+  const [form, setForm] = useState(initialTicketForm)
+  const [errors, setErrors] = useState({})
+  const [message, setMessage] = useState('')
+  const fileInputRef = useRef(null)
+
+  const handleChange = (event) => {
+    const { name, value } = event.target
+    setForm((prev) => ({ ...prev, [name]: value }))
+    setErrors((prev) => ({ ...prev, [name]: '' }))
+    setMessage('')
+  }
+
+  const handleFileChange = (event) => {
+    const files = Array.from(event.target.files || [])
+    setForm((prev) => ({ ...prev, files }))
+    setErrors((prev) => ({ ...prev, files: '' }))
+    setMessage('')
+  }
+
+  const handleSubmit = (event) => {
+    event.preventDefault()
+    const validationErrors = validateTicketForm(form)
+    setErrors(validationErrors)
+    if (Object.keys(validationErrors).length > 0) return
+
+    onCreateTicket({
+      title: form.subject.trim(),
+      category: form.category,
+      attachmentsCount: form.files.length,
+    })
+
+    setMessage('Ticket was created successfully.')
+    setForm(initialTicketForm)
+    setErrors({})
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  return (
+    <article className="panel-card">
+      <h2>Create new ticket</h2>
+      <form className="ticket-form" noValidate onSubmit={handleSubmit}>
+        <label className="ticket-field">
+          Subject
+          <input
+            type="text"
+            name="subject"
+            value={form.subject}
+            onChange={handleChange}
+            placeholder="Short summary of your issue"
+            aria-invalid={Boolean(errors.subject)}
+          />
+          {errors.subject && <span className="field-error">{errors.subject}</span>}
+        </label>
+
+        <label className="ticket-field">
+          Category
+          <select
+            name="category"
+            value={form.category}
+            onChange={handleChange}
+            aria-invalid={Boolean(errors.category)}
+          >
+            <option value="">Choose category</option>
+            {ticketCategories.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
+          {errors.category && <span className="field-error">{errors.category}</span>}
+        </label>
+
+        <label className="ticket-field full-width">
+          Description
+          <textarea
+            name="description"
+            value={form.description}
+            onChange={handleChange}
+            rows={5}
+            placeholder="Describe what happened, steps to reproduce, and expected behavior"
+            aria-invalid={Boolean(errors.description)}
+          />
+          {errors.description && <span className="field-error">{errors.description}</span>}
+        </label>
+
+        <label className="ticket-field full-width">
+          Attach files
+          <input
+            ref={fileInputRef}
+            type="file"
+            name="files"
+            multiple
+            onChange={handleFileChange}
+            aria-invalid={Boolean(errors.files)}
+          />
+          <small className="field-hint">Up to 5 files, max 10MB each.</small>
+          {errors.files && <span className="field-error">{errors.files}</span>}
+          {form.files.length > 0 ? (
+            <ul className="file-list">
+              {form.files.map((file) => (
+                <li key={`${file.name}-${file.lastModified}`}>
+                  {file.name} ({Math.max(1, Math.round(file.size / 1024))} KB)
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </label>
+
+        {message ? <p className="form-message">{message}</p> : null}
+
+        <button type="submit" className="primary-btn ticket-submit">
+          Create ticket
+        </button>
+      </form>
+    </article>
+  )
+}
+
+function HomeView({ onOpenAccount, onOpenTicketForm, tickets, user, onCreateTicket }) {
+  const ticketFormRef = useRef(null)
+
+  const focusTicketForm = () => {
+    onOpenTicketForm()
+    requestAnimationFrame(() => {
+      ticketFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
   return (
     <div className="view-grid">
       <section className="main-column">
@@ -124,7 +324,7 @@ function HomeView({ onOpenAccount, tickets, user }) {
             every ticket lifecycle stage.
           </p>
           <div className="hero-actions">
-            <button type="button" className="primary-btn">
+            <button type="button" className="primary-btn" onClick={focusTicketForm}>
               Create ticket
             </button>
             <button type="button" className="secondary-btn">
@@ -132,6 +332,10 @@ function HomeView({ onOpenAccount, tickets, user }) {
             </button>
           </div>
         </article>
+
+        <div ref={ticketFormRef}>
+          <TicketCreationForm onCreateTicket={onCreateTicket} />
+        </div>
 
         <article className="panel-card">
           <h2>Ticket flow</h2>
@@ -155,6 +359,8 @@ function HomeView({ onOpenAccount, tickets, user }) {
                 <tr>
                   <th>ID</th>
                   <th>Subject</th>
+                  <th>Category</th>
+                  <th>Files</th>
                   <th>Status</th>
                   <th>Updated</th>
                 </tr>
@@ -162,7 +368,7 @@ function HomeView({ onOpenAccount, tickets, user }) {
               <tbody>
                 {tickets.length === 0 && (
                   <tr>
-                    <td className="empty-row" colSpan="4">
+                    <td className="empty-row" colSpan="6">
                       No tickets yet. New requests will appear here.
                     </td>
                   </tr>
@@ -175,6 +381,8 @@ function HomeView({ onOpenAccount, tickets, user }) {
                     <tr key={ticket.id}>
                       <td>{ticket.id}</td>
                       <td>{ticket.title}</td>
+                      <td>{ticket.category}</td>
+                      <td>{ticket.attachmentsCount}</td>
                       <td>
                         <span className={`status-pill status-${statusKey}`}>{statusText}</span>
                       </td>
@@ -219,7 +427,9 @@ function HomeView({ onOpenAccount, tickets, user }) {
         <article className="panel-card">
           <h3>Quick actions</h3>
           <div className="quick-actions">
-            <button type="button">New ticket</button>
+            <button type="button" onClick={focusTicketForm}>
+              New ticket
+            </button>
             <button type="button">My tickets</button>
             <button type="button">Profile settings</button>
             <button type="button">Support docs</button>
@@ -455,14 +665,13 @@ function App() {
   const [loginErrors, setLoginErrors] = useState({})
   const [registerErrors, setRegisterErrors] = useState({})
   const [formMessage, setFormMessage] = useState('')
+  const [tickets, setTickets] = useState(demoTickets)
   const [user, setUser] = useState({
     fullName: 'Guest User',
     email: 'guest@helpdesk.app',
     phone: '+380 00 000 00 00',
     timezone: 'UTC+02:00',
   })
-
-  const recentTickets = useMemo(() => demoTickets, [])
 
   const handleLoginChange = (event) => {
     const { name, value } = event.target
@@ -511,6 +720,21 @@ function App() {
     setActiveView('home')
     setRegisterForm(initialRegisterForm)
     setFormMessage('')
+  }
+
+  const handleCreateTicket = ({ title, category, attachmentsCount }) => {
+    const nextNumber = 4109 + tickets.length
+    const newTicket = {
+      id: `HD-${nextNumber}`,
+      title,
+      category,
+      attachmentsCount,
+      status: 'open',
+      updated: 'just now',
+    }
+
+    setTickets((prev) => [newTicket, ...prev])
+    setActiveView('home')
   }
 
   const handleLogout = () => {
@@ -573,7 +797,13 @@ function App() {
       </header>
 
       {activeView === 'home' ? (
-        <HomeView onOpenAccount={() => setActiveView('account')} tickets={recentTickets} user={user} />
+        <HomeView
+          onOpenAccount={() => setActiveView('account')}
+          onOpenTicketForm={() => setActiveView('home')}
+          tickets={tickets}
+          user={user}
+          onCreateTicket={handleCreateTicket}
+        />
       ) : (
         <AccountView user={user} />
       )}
