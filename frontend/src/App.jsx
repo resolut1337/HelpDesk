@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import './App.css'
+import { useAppState } from './context/useAppState.js'
 
 const navItems = [
   { id: 'home', label: 'Головна' },
@@ -58,33 +59,6 @@ const initialTicketForm = {
 const maxFiles = 5
 const maxFileSizeMb = 10
 const maxFileSizeBytes = maxFileSizeMb * 1024 * 1024
-
-const demoTickets = [
-  {
-    id: 'HD-4108',
-    title: 'Unable to login from VPN',
-    status: 'open',
-    updated: '5 min ago',
-    category: 'Access Issues',
-    attachmentsCount: 1,
-  },
-  {
-    id: 'HD-4107',
-    title: 'Mailbox sync delay',
-    status: 'pending',
-    updated: '20 min ago',
-    category: 'Software Bug',
-    attachmentsCount: 0,
-  },
-  {
-    id: 'HD-4103',
-    title: 'Issue with Slack notifications',
-    status: 'resolved',
-    updated: '1 h ago',
-    category: 'Network',
-    attachmentsCount: 2,
-  },
-]
 
 function getInitials(name) {
   return name
@@ -657,21 +631,14 @@ function AuthPage({
 }
 
 function App() {
+  const { isAuthenticated, user, tickets, login, register, logout, createTicket } = useAppState()
   const [activeView, setActiveView] = useState('home')
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [authMode, setAuthMode] = useState('login')
   const [loginForm, setLoginForm] = useState(initialLoginForm)
   const [registerForm, setRegisterForm] = useState(initialRegisterForm)
   const [loginErrors, setLoginErrors] = useState({})
   const [registerErrors, setRegisterErrors] = useState({})
   const [formMessage, setFormMessage] = useState('')
-  const [tickets, setTickets] = useState(demoTickets)
-  const [user, setUser] = useState({
-    fullName: 'Guest User',
-    email: 'guest@helpdesk.app',
-    phone: '+380 00 000 00 00',
-    timezone: 'UTC+02:00',
-  })
 
   const handleLoginChange = (event) => {
     const { name, value } = event.target
@@ -697,8 +664,7 @@ function App() {
     const email = loginForm.email.trim().toLowerCase()
     const fullName = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
 
-    setUser((prev) => ({ ...prev, fullName, email }))
-    setIsAuthenticated(true)
+    login({ email, fullName })
     setActiveView('home')
     setLoginForm(initialLoginForm)
     setFormMessage('')
@@ -711,35 +677,25 @@ function App() {
 
     if (Object.keys(errors).length > 0) return
 
-    setUser((prev) => ({
-      ...prev,
+    register({
       fullName: registerForm.fullName.trim(),
       email: registerForm.email.trim().toLowerCase(),
-    }))
-    setIsAuthenticated(true)
+    })
     setActiveView('home')
     setRegisterForm(initialRegisterForm)
     setFormMessage('')
   }
 
   const handleCreateTicket = ({ title, category, attachmentsCount }) => {
-    const nextNumber = 4109 + tickets.length
-    const newTicket = {
-      id: `HD-${nextNumber}`,
-      title,
-      category,
-      attachmentsCount,
-      status: 'open',
-      updated: 'just now',
-    }
-
-    setTickets((prev) => [newTicket, ...prev])
+    createTicket({ title, category, attachmentsCount })
     setActiveView('home')
   }
 
   const handleLogout = () => {
-    setIsAuthenticated(false)
+    logout()
     setAuthMode('login')
+    setLoginForm(initialLoginForm)
+    setRegisterForm(initialRegisterForm)
     setLoginErrors({})
     setRegisterErrors({})
     setFormMessage('You have signed out.')
