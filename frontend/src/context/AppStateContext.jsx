@@ -2,7 +2,7 @@ import { useEffect, useMemo, useReducer } from 'react'
 
 import { AppStateContext } from './appStateContext.js'
 
-const STORAGE_KEY = 'helpdesk.globalState.v1'
+const STORAGE_KEY = 'helpdesk.globalState.v2'
 
 const defaultUser = {
   fullName: 'Guest User',
@@ -19,6 +19,28 @@ const defaultTickets = [
     updated: '5 min ago',
     category: 'Access Issues',
     attachmentsCount: 1,
+    description:
+      'User cannot authenticate through corporate VPN after password reset. Browser shows timeout.',
+    requester: 'lina.melnyk@helpdesk.app',
+    priority: 'High',
+    createdAt: '2026-03-04 09:10',
+    attachments: [{ name: 'vpn-error.png', sizeKb: 430 }],
+    history: [
+      {
+        id: 'HD-4108-H1',
+        at: '2026-03-04 09:10',
+        actor: 'Lina Melnyk',
+        action: 'Ticket created',
+        note: 'Issue appeared after password reset.',
+      },
+      {
+        id: 'HD-4108-H2',
+        at: '2026-03-04 09:15',
+        actor: 'Support Bot',
+        action: 'Status changed to Open',
+        note: 'Ticket assigned to first line support queue.',
+      },
+    ],
   },
   {
     id: 'HD-4107',
@@ -27,6 +49,27 @@ const defaultTickets = [
     updated: '20 min ago',
     category: 'Software Bug',
     attachmentsCount: 0,
+    description: 'Outlook sync is delayed by 10-15 minutes on Wi-Fi.',
+    requester: 'danylo.k@helpdesk.app',
+    priority: 'Medium',
+    createdAt: '2026-03-04 08:45',
+    attachments: [],
+    history: [
+      {
+        id: 'HD-4107-H1',
+        at: '2026-03-04 08:45',
+        actor: 'Danylo K.',
+        action: 'Ticket created',
+        note: 'Issue on laptop only.',
+      },
+      {
+        id: 'HD-4107-H2',
+        at: '2026-03-04 09:05',
+        actor: 'Agent Marta',
+        action: 'Status changed to Pending',
+        note: 'Waiting for logs from user.',
+      },
+    ],
   },
   {
     id: 'HD-4103',
@@ -35,6 +78,30 @@ const defaultTickets = [
     updated: '1 h ago',
     category: 'Network',
     attachmentsCount: 2,
+    description: 'Desktop Slack client stopped receiving channel notifications.',
+    requester: 'oleksii.v@helpdesk.app',
+    priority: 'Low',
+    createdAt: '2026-03-04 07:20',
+    attachments: [
+      { name: 'slack-settings.png', sizeKb: 380 },
+      { name: 'console-log.txt', sizeKb: 16 },
+    ],
+    history: [
+      {
+        id: 'HD-4103-H1',
+        at: '2026-03-04 07:20',
+        actor: 'Oleksii V.',
+        action: 'Ticket created',
+        note: 'No notifications since morning.',
+      },
+      {
+        id: 'HD-4103-H2',
+        at: '2026-03-04 08:10',
+        actor: 'Agent Iryna',
+        action: 'Status changed to Resolved',
+        note: 'Push notifications were re-enabled.',
+      },
+    ],
   },
 ]
 
@@ -42,6 +109,92 @@ const initialState = {
   isAuthenticated: false,
   user: defaultUser,
   tickets: defaultTickets,
+}
+
+function nowStamp() {
+  const date = new Date()
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const dd = String(date.getDate()).padStart(2, '0')
+  const hh = String(date.getHours()).padStart(2, '0')
+  const min = String(date.getMinutes()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`
+}
+
+function normalizeAttachment(rawAttachment) {
+  if (!rawAttachment || typeof rawAttachment !== 'object') {
+    return null
+  }
+  return {
+    name: String(rawAttachment.name ?? ''),
+    sizeKb: Number.isFinite(rawAttachment.sizeKb) ? rawAttachment.sizeKb : 0,
+  }
+}
+
+function normalizeHistoryItem(rawItem, fallbackId, fallbackAt) {
+  if (!rawItem || typeof rawItem !== 'object') {
+    return {
+      id: fallbackId,
+      at: fallbackAt,
+      actor: 'System',
+      action: 'Status changed',
+      note: '',
+    }
+  }
+  return {
+    id: String(rawItem.id ?? fallbackId),
+    at: String(rawItem.at ?? fallbackAt),
+    actor: String(rawItem.actor ?? 'System'),
+    action: String(rawItem.action ?? 'Status changed'),
+    note: String(rawItem.note ?? ''),
+  }
+}
+
+function normalizeTicket(rawTicket) {
+  const id = String(rawTicket?.id ?? '')
+  const title = String(rawTicket?.title ?? '').trim()
+  if (!id || !title) {
+    return null
+  }
+
+  const createdAt = String(rawTicket?.createdAt ?? nowStamp())
+  const attachments = Array.isArray(rawTicket?.attachments)
+    ? rawTicket.attachments.map(normalizeAttachment).filter(Boolean)
+    : []
+
+  const history = Array.isArray(rawTicket?.history)
+    ? rawTicket.history
+        .map((item, index) => normalizeHistoryItem(item, `${id}-H${index + 1}`, createdAt))
+        .filter(Boolean)
+    : []
+
+  return {
+    id,
+    title,
+    status: String(rawTicket?.status ?? 'open'),
+    updated: String(rawTicket?.updated ?? 'just now'),
+    category: String(rawTicket?.category ?? 'Other'),
+    attachmentsCount: Number.isFinite(rawTicket?.attachmentsCount)
+      ? rawTicket.attachmentsCount
+      : attachments.length,
+    description: String(rawTicket?.description ?? 'No description provided yet.'),
+    requester: String(rawTicket?.requester ?? defaultUser.email),
+    priority: String(rawTicket?.priority ?? 'Medium'),
+    createdAt,
+    attachments,
+    history:
+      history.length > 0
+        ? history
+        : [
+            {
+              id: `${id}-H1`,
+              at: createdAt,
+              actor: 'System',
+              action: 'Ticket created',
+              note: '',
+            },
+          ],
+  }
 }
 
 function normalizeState(rawState) {
@@ -61,18 +214,7 @@ function normalizeState(rawState) {
       : defaultUser
 
   const safeTickets = Array.isArray(rawState.tickets)
-    ? rawState.tickets
-        .map((ticket) => ({
-          id: String(ticket?.id ?? ''),
-          title: String(ticket?.title ?? ''),
-          status: String(ticket?.status ?? 'open'),
-          updated: String(ticket?.updated ?? 'just now'),
-          category: String(ticket?.category ?? 'Other'),
-          attachmentsCount: Number.isFinite(ticket?.attachmentsCount)
-            ? ticket.attachmentsCount
-            : 0,
-        }))
-        .filter((ticket) => ticket.id && ticket.title)
+    ? rawState.tickets.map(normalizeTicket).filter(Boolean)
     : defaultTickets
 
   return {
@@ -136,14 +278,31 @@ function appStateReducer(state, action) {
       }
     }
     case 'CREATE_TICKET': {
-      const { title, category, attachmentsCount } = action.payload
+      const { title, category, description, attachments, requester } = action.payload
+      const newId = getNextTicketId(state.tickets)
+      const createdAt = nowStamp()
+
       const newTicket = {
-        id: getNextTicketId(state.tickets),
+        id: newId,
         title,
         category,
-        attachmentsCount,
+        attachmentsCount: attachments.length,
         status: 'open',
         updated: 'just now',
+        description,
+        requester,
+        priority: 'Medium',
+        createdAt,
+        attachments,
+        history: [
+          {
+            id: `${newId}-H1`,
+            at: createdAt,
+            actor: requester,
+            action: 'Ticket created',
+            note: 'Submitted from ticket creation form.',
+          },
+        ],
       }
       return {
         ...state,
@@ -182,10 +341,10 @@ export function AppStateProvider({ children }) {
           payload: { email, fullName },
         }),
       logout: () => dispatch({ type: 'LOGOUT' }),
-      createTicket: ({ title, category, attachmentsCount }) =>
+      createTicket: ({ title, category, description, attachments, requester }) =>
         dispatch({
           type: 'CREATE_TICKET',
-          payload: { title, category, attachmentsCount },
+          payload: { title, category, description, attachments, requester },
         }),
     }
   }, [state.isAuthenticated, state.tickets, state.user])
