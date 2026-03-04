@@ -187,7 +187,11 @@ function TicketCreationForm({ onCreateTicket }) {
     onCreateTicket({
       title: form.subject.trim(),
       category: form.category,
-      attachmentsCount: form.files.length,
+      description: form.description.trim(),
+      attachments: form.files.map((file) => ({
+        name: file.name,
+        sizeKb: Math.max(1, Math.round(file.size / 1024)),
+      })),
     })
 
     setMessage('Ticket was created successfully.')
@@ -277,7 +281,7 @@ function TicketCreationForm({ onCreateTicket }) {
   )
 }
 
-function HomeView({ onOpenAccount, onOpenTicketForm, tickets, user, onCreateTicket }) {
+function HomeView({ onOpenAccount, onOpenTicketForm, onOpenTicketDetails, tickets, user, onCreateTicket }) {
   const ticketFormRef = useRef(null)
 
   const focusTicketForm = () => {
@@ -353,7 +357,15 @@ function HomeView({ onOpenAccount, onOpenTicketForm, tickets, user, onCreateTick
 
                   return (
                     <tr key={ticket.id}>
-                      <td>{ticket.id}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="link-btn table-link-btn"
+                          onClick={() => onOpenTicketDetails(ticket.id)}
+                        >
+                          {ticket.id}
+                        </button>
+                      </td>
                       <td>{ticket.title}</td>
                       <td>{ticket.category}</td>
                       <td>{ticket.attachmentsCount}</td>
@@ -411,6 +423,113 @@ function HomeView({ onOpenAccount, onOpenTicketForm, tickets, user, onCreateTick
         </article>
       </aside>
     </div>
+  )
+}
+
+function TicketDetailView({ ticket, onBack }) {
+  if (!ticket) {
+    return (
+      <section className="ticket-detail-layout">
+        <article className="panel-card">
+          <h2>Ticket not found</h2>
+          <p>The ticket may have been removed or was not loaded yet.</p>
+          <button type="button" className="secondary-btn" onClick={onBack}>
+            Back to dashboard
+          </button>
+        </article>
+      </section>
+    )
+  }
+
+  const statusKey = ticket.status.toLowerCase()
+  const statusText = statusLabels[statusKey] ?? ticket.status
+
+  return (
+    <section className="ticket-detail-layout">
+      <article className="panel-card ticket-detail-main">
+        <div className="ticket-detail-head">
+          <div>
+            <p className="eyebrow">Ticket details</p>
+            <h1>
+              {ticket.id} - {ticket.title}
+            </h1>
+          </div>
+          <span className={`status-pill status-${statusKey}`}>{statusText}</span>
+        </div>
+
+        <dl className="ticket-meta">
+          <div>
+            <dt>Category</dt>
+            <dd>{ticket.category}</dd>
+          </div>
+          <div>
+            <dt>Priority</dt>
+            <dd>{ticket.priority}</dd>
+          </div>
+          <div>
+            <dt>Requester</dt>
+            <dd>{ticket.requester}</dd>
+          </div>
+          <div>
+            <dt>Created</dt>
+            <dd>{ticket.createdAt}</dd>
+          </div>
+          <div>
+            <dt>Updated</dt>
+            <dd>{ticket.updated}</dd>
+          </div>
+          <div>
+            <dt>Files</dt>
+            <dd>{ticket.attachmentsCount}</dd>
+          </div>
+        </dl>
+
+        <article className="ticket-section">
+          <h2>Description</h2>
+          <p>{ticket.description}</p>
+        </article>
+
+        <article className="ticket-section">
+          <h2>Attachments</h2>
+          {ticket.attachments.length === 0 ? (
+            <p className="muted-text">No files attached.</p>
+          ) : (
+            <ul className="attachment-list">
+              {ticket.attachments.map((file) => (
+                <li key={`${ticket.id}-${file.name}`}>
+                  <span>{file.name}</span>
+                  <small>{file.sizeKb} KB</small>
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
+
+        <div className="ticket-actions">
+          <button type="button" className="secondary-btn" onClick={onBack}>
+            Back to dashboard
+          </button>
+        </div>
+      </article>
+
+      <article className="panel-card">
+        <h2>History</h2>
+        <ul className="history-list">
+          {ticket.history.map((event) => (
+            <li key={event.id}>
+              <div className="history-title-row">
+                <strong>{event.action}</strong>
+                <small>{event.at}</small>
+              </div>
+              <p>
+                {event.actor}
+                {event.note ? ` - ${event.note}` : ''}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </article>
+    </section>
   )
 }
 
@@ -633,6 +752,7 @@ function AuthPage({
 function App() {
   const { isAuthenticated, user, tickets, login, register, logout, createTicket } = useAppState()
   const [activeView, setActiveView] = useState('home')
+  const [selectedTicketId, setSelectedTicketId] = useState(null)
   const [authMode, setAuthMode] = useState('login')
   const [loginForm, setLoginForm] = useState(initialLoginForm)
   const [registerForm, setRegisterForm] = useState(initialRegisterForm)
@@ -686,9 +806,20 @@ function App() {
     setFormMessage('')
   }
 
-  const handleCreateTicket = ({ title, category, attachmentsCount }) => {
-    createTicket({ title, category, attachmentsCount })
+  const handleCreateTicket = ({ title, category, description, attachments }) => {
+    createTicket({
+      title,
+      category,
+      description,
+      attachments,
+      requester: user.email,
+    })
     setActiveView('home')
+  }
+
+  const handleOpenTicketDetails = (ticketId) => {
+    setSelectedTicketId(ticketId)
+    setActiveView('ticket')
   }
 
   const handleLogout = () => {
@@ -756,12 +887,18 @@ function App() {
         <HomeView
           onOpenAccount={() => setActiveView('account')}
           onOpenTicketForm={() => setActiveView('home')}
+          onOpenTicketDetails={handleOpenTicketDetails}
           tickets={tickets}
           user={user}
           onCreateTicket={handleCreateTicket}
         />
-      ) : (
+      ) : activeView === 'account' ? (
         <AccountView user={user} />
+      ) : (
+        <TicketDetailView
+          ticket={tickets.find((ticket) => ticket.id === selectedTicketId) ?? null}
+          onBack={() => setActiveView('home')}
+        />
       )}
     </div>
   )
