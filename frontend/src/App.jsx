@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react'
+import { Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import './App.css'
 import { useAppState } from './context/useAppState.js'
 
 const navItems = [
-  { id: 'home', label: 'Головна' },
-  { id: 'account', label: 'Акаунт' },
+  { id: 'home', path: '/', label: 'Головна' },
+  { id: 'account', path: '/account', label: 'Акаунт' },
 ]
 
 const statusLabels = {
@@ -281,11 +282,10 @@ function TicketCreationForm({ onCreateTicket }) {
   )
 }
 
-function HomeView({ onOpenAccount, onOpenTicketForm, onOpenTicketDetails, tickets, user, onCreateTicket }) {
+function HomeView({ onOpenAccount, onOpenTicketDetails, tickets, user, onCreateTicket }) {
   const ticketFormRef = useRef(null)
 
   const focusTicketForm = () => {
-    onOpenTicketForm()
     requestAnimationFrame(() => {
       ticketFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
@@ -749,11 +749,68 @@ function AuthPage({
   )
 }
 
+function PrivateRoute() {
+  const { isAuthenticated } = useAppState()
+  const location = useLocation()
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: location }} />
+  }
+
+  return <Outlet />
+}
+
+function PublicOnlyRoute() {
+  const { isAuthenticated } = useAppState()
+  return isAuthenticated ? <Navigate to="/" replace /> : <Outlet />
+}
+
+function ProtectedLayout({ user, onLogout }) {
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand">
+          <span>HD</span>
+          <div>
+            <p>HelpDesk</p>
+            <small>{user.email}</small>
+          </div>
+        </div>
+
+        <nav className="top-nav">
+          {navItems.map((item) => (
+            <NavLink
+              key={item.id}
+              to={item.path}
+              end={item.path === '/'}
+              className={({ isActive }) => (isActive ? 'nav-btn active' : 'nav-btn')}
+            >
+              {item.label}
+            </NavLink>
+          ))}
+          <button type="button" className="nav-btn" onClick={onLogout}>
+            �����
+          </button>
+        </nav>
+      </header>
+
+      <Outlet />
+    </div>
+  )
+}
+
+function TicketDetailPage({ tickets }) {
+  const { ticketId } = useParams()
+  const navigate = useNavigate()
+  const ticket = tickets.find((item) => item.id === ticketId) ?? null
+
+  return <TicketDetailView ticket={ticket} onBack={() => navigate('/')} />
+}
+
 function App() {
   const { isAuthenticated, user, tickets, login, register, logout, createTicket } = useAppState()
-  const [activeView, setActiveView] = useState('home')
-  const [selectedTicketId, setSelectedTicketId] = useState(null)
-  const [authMode, setAuthMode] = useState('login')
+  const navigate = useNavigate()
+  const location = useLocation()
   const [loginForm, setLoginForm] = useState(initialLoginForm)
   const [registerForm, setRegisterForm] = useState(initialRegisterForm)
   const [loginErrors, setLoginErrors] = useState({})
@@ -782,12 +839,19 @@ function App() {
     if (Object.keys(errors).length > 0) return
 
     const email = loginForm.email.trim().toLowerCase()
-    const fullName = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+    const fullName = email
+      .split('@')[0]
+      .replace(/[._-]/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase())
 
     login({ email, fullName })
-    setActiveView('home')
     setLoginForm(initialLoginForm)
     setFormMessage('')
+
+    const fromPath = location.state?.from?.pathname
+    const redirectPath =
+      fromPath && fromPath !== '/login' && fromPath !== '/register' ? fromPath : '/'
+    navigate(redirectPath, { replace: true })
   }
 
   const handleRegisterSubmit = (event) => {
@@ -801,9 +865,9 @@ function App() {
       fullName: registerForm.fullName.trim(),
       email: registerForm.email.trim().toLowerCase(),
     })
-    setActiveView('home')
     setRegisterForm(initialRegisterForm)
     setFormMessage('')
+    navigate('/', { replace: true })
   }
 
   const handleCreateTicket = ({ title, category, description, attachments }) => {
@@ -814,94 +878,94 @@ function App() {
       attachments,
       requester: user.email,
     })
-    setActiveView('home')
-  }
-
-  const handleOpenTicketDetails = (ticketId) => {
-    setSelectedTicketId(ticketId)
-    setActiveView('ticket')
+    navigate('/', { replace: true })
   }
 
   const handleLogout = () => {
     logout()
-    setAuthMode('login')
     setLoginForm(initialLoginForm)
     setRegisterForm(initialRegisterForm)
     setLoginErrors({})
     setRegisterErrors({})
     setFormMessage('You have signed out.')
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <AuthPage
-        authMode={authMode}
-        setAuthMode={(mode) => {
-          setAuthMode(mode)
-          setFormMessage('')
-          setLoginErrors({})
-          setRegisterErrors({})
-        }}
-        loginForm={loginForm}
-        registerForm={registerForm}
-        loginErrors={loginErrors}
-        registerErrors={registerErrors}
-        formMessage={formMessage}
-        onLoginChange={handleLoginChange}
-        onRegisterChange={handleRegisterChange}
-        onLoginSubmit={handleLoginSubmit}
-        onRegisterSubmit={handleRegisterSubmit}
-      />
-    )
+    navigate('/login', { replace: true })
   }
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <span>HD</span>
-          <div>
-            <p>HelpDesk</p>
-            <small>{user.email}</small>
-          </div>
-        </div>
-
-        <nav className="top-nav">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={activeView === item.id ? 'nav-btn active' : 'nav-btn'}
-              onClick={() => setActiveView(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-          <button type="button" className="nav-btn" onClick={handleLogout}>
-            Вийти
-          </button>
-        </nav>
-      </header>
-
-      {activeView === 'home' ? (
-        <HomeView
-          onOpenAccount={() => setActiveView('account')}
-          onOpenTicketForm={() => setActiveView('home')}
-          onOpenTicketDetails={handleOpenTicketDetails}
-          tickets={tickets}
-          user={user}
-          onCreateTicket={handleCreateTicket}
+    <Routes>
+      <Route element={<PublicOnlyRoute />}>
+        <Route
+          path="/login"
+          element={
+            <AuthPage
+              authMode="login"
+              setAuthMode={(mode) => {
+                setFormMessage('')
+                setLoginErrors({})
+                setRegisterErrors({})
+                navigate(mode === 'login' ? '/login' : '/register')
+              }}
+              loginForm={loginForm}
+              registerForm={registerForm}
+              loginErrors={loginErrors}
+              registerErrors={registerErrors}
+              formMessage={formMessage}
+              onLoginChange={handleLoginChange}
+              onRegisterChange={handleRegisterChange}
+              onLoginSubmit={handleLoginSubmit}
+              onRegisterSubmit={handleRegisterSubmit}
+            />
+          }
         />
-      ) : activeView === 'account' ? (
-        <AccountView user={user} />
-      ) : (
-        <TicketDetailView
-          ticket={tickets.find((ticket) => ticket.id === selectedTicketId) ?? null}
-          onBack={() => setActiveView('home')}
+        <Route
+          path="/register"
+          element={
+            <AuthPage
+              authMode="register"
+              setAuthMode={(mode) => {
+                setFormMessage('')
+                setLoginErrors({})
+                setRegisterErrors({})
+                navigate(mode === 'login' ? '/login' : '/register')
+              }}
+              loginForm={loginForm}
+              registerForm={registerForm}
+              loginErrors={loginErrors}
+              registerErrors={registerErrors}
+              formMessage={formMessage}
+              onLoginChange={handleLoginChange}
+              onRegisterChange={handleRegisterChange}
+              onLoginSubmit={handleLoginSubmit}
+              onRegisterSubmit={handleRegisterSubmit}
+            />
+          }
         />
-      )}
-    </div>
+      </Route>
+
+      <Route element={<PrivateRoute />}>
+        <Route element={<ProtectedLayout user={user} onLogout={handleLogout} />}>
+          <Route
+            path="/"
+            element={
+              <HomeView
+                onOpenAccount={() => navigate('/account')}
+                onOpenTicketDetails={(ticketId) => navigate(`/tickets/${ticketId}`)}
+                tickets={tickets}
+                user={user}
+                onCreateTicket={handleCreateTicket}
+              />
+            }
+          />
+          <Route path="/account" element={<AccountView user={user} />} />
+          <Route path="/tickets/:ticketId" element={<TicketDetailPage tickets={tickets} />} />
+        </Route>
+      </Route>
+
+      <Route path="*" element={<Navigate to={isAuthenticated ? '/' : '/login'} replace />} />
+    </Routes>
   )
 }
 
 export default App
+
+
