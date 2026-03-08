@@ -482,6 +482,30 @@ tbody tr:hover {
   margin-top: 0.85rem;
 }
 
+.status-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+}
+
+.status-toggle-btn {
+  border: 1px solid #c8d8e3;
+  background: #f4f9fc;
+  color: #2d4e66;
+  border-radius: 10px;
+  padding: 0.45rem 0.75rem;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.status-toggle-btn.active {
+  border-color: #0f6cd3;
+  background: #e8f1ff;
+  color: #0f5ba6;
+  cursor: not-allowed;
+}
+
 .ticket-chat-card {
   grid-column: 1 / -1;
 }

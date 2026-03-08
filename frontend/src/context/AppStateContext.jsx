@@ -9,6 +9,7 @@ const defaultUser = {
   email: 'guest@helpdesk.app',
   phone: '+380 00 000 00 00',
   timezone: 'UTC+02:00',
+  isStaff: true,
 }
 
 const defaultTickets = [
@@ -263,6 +264,7 @@ function normalizeState(rawState) {
           email: String(rawState.user.email ?? defaultUser.email),
           phone: String(rawState.user.phone ?? defaultUser.phone),
           timezone: String(rawState.user.timezone ?? defaultUser.timezone),
+          isStaff: Boolean(rawState.user.isStaff ?? defaultUser.isStaff),
         }
       : defaultUser
 
@@ -309,6 +311,7 @@ function appStateReducer(state, action) {
           ...state.user,
           email,
           fullName,
+          isStaff: state.user.isStaff,
         },
       }
     }
@@ -321,6 +324,7 @@ function appStateReducer(state, action) {
           ...state.user,
           email,
           fullName,
+          isStaff: state.user.isStaff,
         },
       }
     }
@@ -404,6 +408,32 @@ function appStateReducer(state, action) {
         }),
       }
     }
+    case 'UPDATE_TICKET_STATUS': {
+      const { ticketId, status, actor } = action.payload
+      const stamp = nowStamp()
+      return {
+        ...state,
+        tickets: state.tickets.map((ticket) => {
+          if (ticket.id !== ticketId || ticket.status === status) return ticket
+
+          return {
+            ...ticket,
+            status,
+            updated: 'just now',
+            history: [
+              ...ticket.history,
+              {
+                id: `${ticketId}-H${ticket.history.length + 1}`,
+                at: stamp,
+                actor,
+                action: `Status changed to ${String(status).charAt(0).toUpperCase()}${String(status).slice(1)}`,
+                note: '',
+              },
+            ],
+          }
+        }),
+      }
+    }
     default:
       return state
   }
@@ -445,6 +475,11 @@ export function AppStateProvider({ children }) {
         dispatch({
           type: 'ADD_TICKET_COMMENT',
           payload: { ticketId, author, role, message },
+        }),
+      updateTicketStatus: ({ ticketId, status, actor }) =>
+        dispatch({
+          type: 'UPDATE_TICKET_STATUS',
+          payload: { ticketId, status, actor },
         }),
     }
   }, [state.isAuthenticated, state.tickets, state.user])

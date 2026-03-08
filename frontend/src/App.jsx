@@ -426,7 +426,7 @@ function HomeView({ onOpenAccount, onOpenTicketDetails, tickets, user, onCreateT
   )
 }
 
-function TicketDetailView({ ticket, currentUser, onBack, onSendComment }) {
+function TicketDetailView({ ticket, currentUser, onBack, onSendComment, onChangeStatus }) {
   const [commentBody, setCommentBody] = useState('')
   const [commentRole, setCommentRole] = useState('user')
   const [commentError, setCommentError] = useState('')
@@ -448,6 +448,8 @@ function TicketDetailView({ ticket, currentUser, onBack, onSendComment }) {
   const statusKey = ticket.status.toLowerCase()
   const statusText = statusLabels[statusKey] ?? ticket.status
   const canSubmitComment = commentBody.trim().length > 0
+  const statusOptions = ['open', 'pending', 'resolved', 'closed']
+  const isStaff = Boolean(currentUser?.isStaff)
 
   const handleCommentSubmit = (event) => {
     event.preventDefault()
@@ -517,6 +519,39 @@ function TicketDetailView({ ticket, currentUser, onBack, onSendComment }) {
           <h2>Description</h2>
           <p>{ticket.description}</p>
         </article>
+
+        {isStaff ? (
+          <article className="ticket-section">
+            <h2>Quick status update</h2>
+            <div className="status-toggle-row">
+              {statusOptions.map((status) => {
+                const isActive = status === ticket.status
+                const label = statusLabels[status] ?? status
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    className={isActive ? 'status-toggle-btn active' : 'status-toggle-btn'}
+                    disabled={isActive}
+                    onClick={() =>
+                      onChangeStatus({
+                        ticketId: ticket.id,
+                        status,
+                      })
+                    }
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          </article>
+        ) : (
+          <article className="ticket-section">
+            <h2>Status</h2>
+            <p className="muted-text">Only support staff can change ticket status.</p>
+          </article>
+        )}
 
         <article className="ticket-section">
           <h2>Attachments</h2>
@@ -895,7 +930,7 @@ function ProtectedLayout({ user, onLogout }) {
   )
 }
 
-function TicketDetailPage({ tickets, user, onSendComment }) {
+function TicketDetailPage({ tickets, user, onSendComment, onChangeStatus }) {
   const { ticketId } = useParams()
   const navigate = useNavigate()
   const ticket = tickets.find((item) => item.id === ticketId) ?? null
@@ -906,6 +941,7 @@ function TicketDetailPage({ tickets, user, onSendComment }) {
       currentUser={user}
       onBack={() => navigate('/')}
       onSendComment={onSendComment}
+      onChangeStatus={onChangeStatus}
     />
   )
 }
@@ -920,6 +956,7 @@ function App() {
     logout,
     createTicket,
     addTicketComment,
+    updateTicketStatus,
   } = useAppState()
   const navigate = useNavigate()
   const location = useLocation()
@@ -1007,6 +1044,14 @@ function App() {
     addTicketComment({ ticketId, author, role, message })
   }
 
+  const handleTicketStatusChange = ({ ticketId, status }) => {
+    updateTicketStatus({
+      ticketId,
+      status,
+      actor: user?.fullName?.trim() || user?.email || 'Support Agent',
+    })
+  }
+
   return (
     <Routes>
       <Route element={<PublicOnlyRoute />}>
@@ -1080,6 +1125,7 @@ function App() {
                 tickets={tickets}
                 user={user}
                 onSendComment={handleSendTicketComment}
+                onChangeStatus={handleTicketStatusChange}
               />
             }
           />
