@@ -1,11 +1,11 @@
-import { useRef, useState } from 'react'
+﻿import { useRef, useState } from 'react'
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import './App.css'
 import { useAppState } from './context/useAppState.js'
 
 const navItems = [
-  { id: 'home', path: '/', label: 'Головна' },
-  { id: 'account', path: '/account', label: 'Акаунт' },
+  { id: 'home', path: '/', label: 'Р“РѕР»РѕРІРЅР°' },
+  { id: 'account', path: '/account', label: 'РђРєР°СѓРЅС‚' },
 ]
 
 const statusLabels = {
@@ -426,7 +426,11 @@ function HomeView({ onOpenAccount, onOpenTicketDetails, tickets, user, onCreateT
   )
 }
 
-function TicketDetailView({ ticket, onBack }) {
+function TicketDetailView({ ticket, currentUser, onBack, onSendComment }) {
+  const [commentBody, setCommentBody] = useState('')
+  const [commentRole, setCommentRole] = useState('user')
+  const [commentError, setCommentError] = useState('')
+
   if (!ticket) {
     return (
       <section className="ticket-detail-layout">
@@ -443,6 +447,31 @@ function TicketDetailView({ ticket, onBack }) {
 
   const statusKey = ticket.status.toLowerCase()
   const statusText = statusLabels[statusKey] ?? ticket.status
+  const canSubmitComment = commentBody.trim().length > 0
+
+  const handleCommentSubmit = (event) => {
+    event.preventDefault()
+    const body = commentBody.trim()
+    if (!body) {
+      setCommentError('Comment message is required.')
+      return
+    }
+
+    const author =
+      commentRole === 'support'
+        ? 'Support Agent'
+        : currentUser?.fullName?.trim() || currentUser?.email || 'User'
+
+    onSendComment({
+      ticketId: ticket.id,
+      author,
+      role: commentRole,
+      message: body,
+    })
+
+    setCommentBody('')
+    setCommentError('')
+  }
 
   return (
     <section className="ticket-detail-layout">
@@ -528,6 +557,73 @@ function TicketDetailView({ ticket, onBack }) {
             </li>
           ))}
         </ul>
+      </article>
+
+      <article className="panel-card ticket-chat-card">
+        <h2>Comments</h2>
+        {ticket.comments.length === 0 ? (
+          <p className="muted-text">No messages yet. Start the conversation.</p>
+        ) : (
+          <ul className="comment-list">
+            {ticket.comments.map((comment) => (
+              <li
+                key={comment.id}
+                className={
+                  comment.role === 'support'
+                    ? 'comment-item comment-support'
+                    : 'comment-item comment-user'
+                }
+              >
+                <div className="comment-meta">
+                  <strong>{comment.author}</strong>
+                  <small>{comment.at}</small>
+                </div>
+                <p>{comment.message}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form className="comment-form" noValidate onSubmit={handleCommentSubmit}>
+          <div className="comment-role-row">
+            <label>
+              <input
+                type="radio"
+                name="commentRole"
+                value="user"
+                checked={commentRole === 'user'}
+                onChange={(event) => setCommentRole(event.target.value)}
+              />
+              User
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="commentRole"
+                value="support"
+                checked={commentRole === 'support'}
+                onChange={(event) => setCommentRole(event.target.value)}
+              />
+              Support
+            </label>
+          </div>
+
+          <textarea
+            value={commentBody}
+            onChange={(event) => {
+              setCommentBody(event.target.value)
+              if (commentError) setCommentError('')
+            }}
+            rows={3}
+            placeholder="Write a message..."
+            aria-invalid={Boolean(commentError)}
+          />
+          {commentError ? <span className="field-error">{commentError}</span> : null}
+
+          <button type="submit" className="primary-btn" disabled={!canSubmitComment}>
+            Send message
+          </button>
+        </form>
       </article>
     </section>
   )
@@ -623,11 +719,11 @@ function AuthPage({
     <div className="auth-shell">
       <article className="auth-card">
         <p className="eyebrow">HelpDesk Access</p>
-        <h1>{isLogin ? 'Вхід' : 'Реєстрація'}</h1>
+        <h1>{isLogin ? 'Р’С…С–Рґ' : 'Р РµС”СЃС‚СЂР°С†С–СЏ'}</h1>
         <p className="auth-subtitle">
           {isLogin
-            ? 'Увійдіть у систему за допомогою email та пароля.'
-            : 'Створіть акаунт для доступу до заявок і профілю.'}
+            ? 'РЈРІС–Р№РґС–С‚СЊ Сѓ СЃРёСЃС‚РµРјСѓ Р·Р° РґРѕРїРѕРјРѕРіРѕСЋ email С‚Р° РїР°СЂРѕР»СЏ.'
+            : 'РЎС‚РІРѕСЂС–С‚СЊ Р°РєР°СѓРЅС‚ РґР»СЏ РґРѕСЃС‚СѓРїСѓ РґРѕ Р·Р°СЏРІРѕРє С– РїСЂРѕС„С–Р»СЋ.'}
         </p>
 
         <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
@@ -636,14 +732,14 @@ function AuthPage({
             className={isLogin ? 'auth-tab active' : 'auth-tab'}
             onClick={() => setAuthMode('login')}
           >
-            Вхід
+            Р’С…С–Рґ
           </button>
           <button
             type="button"
             className={!isLogin ? 'auth-tab active' : 'auth-tab'}
             onClick={() => setAuthMode('register')}
           >
-            Реєстрація
+            Р РµС”СЃС‚СЂР°С†С–СЏ
           </button>
         </div>
 
@@ -678,7 +774,7 @@ function AuthPage({
             {formMessage ? <p className="form-message">{formMessage}</p> : null}
 
             <button type="submit" className="primary-btn auth-submit">
-              Увійти
+              РЈРІС–Р№С‚Рё
             </button>
           </form>
         ) : (
@@ -740,7 +836,7 @@ function AuthPage({
             {formMessage ? <p className="form-message">{formMessage}</p> : null}
 
             <button type="submit" className="primary-btn auth-submit">
-              Створити акаунт
+              РЎС‚РІРѕСЂРёС‚Рё Р°РєР°СѓРЅС‚
             </button>
           </form>
         )}
@@ -789,7 +885,7 @@ function ProtectedLayout({ user, onLogout }) {
             </NavLink>
           ))}
           <button type="button" className="nav-btn" onClick={onLogout}>
-            �����
+            Вийти
           </button>
         </nav>
       </header>
@@ -799,16 +895,32 @@ function ProtectedLayout({ user, onLogout }) {
   )
 }
 
-function TicketDetailPage({ tickets }) {
+function TicketDetailPage({ tickets, user, onSendComment }) {
   const { ticketId } = useParams()
   const navigate = useNavigate()
   const ticket = tickets.find((item) => item.id === ticketId) ?? null
 
-  return <TicketDetailView ticket={ticket} onBack={() => navigate('/')} />
+  return (
+    <TicketDetailView
+      ticket={ticket}
+      currentUser={user}
+      onBack={() => navigate('/')}
+      onSendComment={onSendComment}
+    />
+  )
 }
 
 function App() {
-  const { isAuthenticated, user, tickets, login, register, logout, createTicket } = useAppState()
+  const {
+    isAuthenticated,
+    user,
+    tickets,
+    login,
+    register,
+    logout,
+    createTicket,
+    addTicketComment,
+  } = useAppState()
   const navigate = useNavigate()
   const location = useLocation()
   const [loginForm, setLoginForm] = useState(initialLoginForm)
@@ -891,6 +1003,10 @@ function App() {
     navigate('/login', { replace: true })
   }
 
+  const handleSendTicketComment = ({ ticketId, author, role, message }) => {
+    addTicketComment({ ticketId, author, role, message })
+  }
+
   return (
     <Routes>
       <Route element={<PublicOnlyRoute />}>
@@ -957,7 +1073,16 @@ function App() {
             }
           />
           <Route path="/account" element={<AccountView user={user} />} />
-          <Route path="/tickets/:ticketId" element={<TicketDetailPage tickets={tickets} />} />
+          <Route
+            path="/tickets/:ticketId"
+            element={
+              <TicketDetailPage
+                tickets={tickets}
+                user={user}
+                onSendComment={handleSendTicketComment}
+              />
+            }
+          />
         </Route>
       </Route>
 
@@ -967,5 +1092,6 @@ function App() {
 }
 
 export default App
+
 
 
