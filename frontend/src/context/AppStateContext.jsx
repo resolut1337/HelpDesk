@@ -9,6 +9,7 @@ const defaultUser = {
   email: 'guest@helpdesk.app',
   phone: '+380 00 000 00 00',
   timezone: 'UTC+02:00',
+  isStaff: true,
 }
 
 const defaultTickets = [
@@ -41,6 +42,22 @@ const defaultTickets = [
         note: 'Ticket assigned to first line support queue.',
       },
     ],
+    comments: [
+      {
+        id: 'HD-4108-C1',
+        at: '2026-03-04 09:12',
+        author: 'Lina Melnyk',
+        role: 'user',
+        message: 'I can login in browser, but VPN app keeps failing.',
+      },
+      {
+        id: 'HD-4108-C2',
+        at: '2026-03-04 09:16',
+        author: 'Agent Marta',
+        role: 'support',
+        message: 'Received. Please attach a screenshot of the VPN error.',
+      },
+    ],
   },
   {
     id: 'HD-4107',
@@ -70,6 +87,7 @@ const defaultTickets = [
         note: 'Waiting for logs from user.',
       },
     ],
+    comments: [],
   },
   {
     id: 'HD-4103',
@@ -100,6 +118,15 @@ const defaultTickets = [
         actor: 'Agent Iryna',
         action: 'Status changed to Resolved',
         note: 'Push notifications were re-enabled.',
+      },
+    ],
+    comments: [
+      {
+        id: 'HD-4103-C1',
+        at: '2026-03-04 07:35',
+        author: 'Agent Iryna',
+        role: 'support',
+        message: 'Please verify notification settings in Slack desktop app.',
       },
     ],
   },
@@ -150,6 +177,26 @@ function normalizeHistoryItem(rawItem, fallbackId, fallbackAt) {
   }
 }
 
+function normalizeCommentItem(rawItem, fallbackId, fallbackAt) {
+  if (!rawItem || typeof rawItem !== 'object') {
+    return {
+      id: fallbackId,
+      at: fallbackAt,
+      author: 'System',
+      role: 'support',
+      message: '',
+    }
+  }
+  const role = rawItem.role === 'support' ? 'support' : 'user'
+  return {
+    id: String(rawItem.id ?? fallbackId),
+    at: String(rawItem.at ?? fallbackAt),
+    author: String(rawItem.author ?? 'System'),
+    role,
+    message: String(rawItem.message ?? ''),
+  }
+}
+
 function normalizeTicket(rawTicket) {
   const id = String(rawTicket?.id ?? '')
   const title = String(rawTicket?.title ?? '').trim()
@@ -166,6 +213,12 @@ function normalizeTicket(rawTicket) {
     ? rawTicket.history
         .map((item, index) => normalizeHistoryItem(item, `${id}-H${index + 1}`, createdAt))
         .filter(Boolean)
+    : []
+
+  const comments = Array.isArray(rawTicket?.comments)
+    ? rawTicket.comments
+        .map((item, index) => normalizeCommentItem(item, `${id}-C${index + 1}`, createdAt))
+        .filter((item) => item.message.trim())
     : []
 
   return {
@@ -194,6 +247,7 @@ function normalizeTicket(rawTicket) {
               note: '',
             },
           ],
+    comments,
   }
 }
 
@@ -210,6 +264,7 @@ function normalizeState(rawState) {
           email: String(rawState.user.email ?? defaultUser.email),
           phone: String(rawState.user.phone ?? defaultUser.phone),
           timezone: String(rawState.user.timezone ?? defaultUser.timezone),
+          isStaff: Boolean(rawState.user.isStaff ?? defaultUser.isStaff),
         }
       : defaultUser
 
@@ -256,6 +311,7 @@ function appStateReducer(state, action) {
           ...state.user,
           email,
           fullName,
+          isStaff: state.user.isStaff,
         },
       }
     }
@@ -268,6 +324,7 @@ function appStateReducer(state, action) {
           ...state.user,
           email,
           fullName,
+          isStaff: state.user.isStaff,
         },
       }
     }
@@ -303,10 +360,78 @@ function appStateReducer(state, action) {
             note: 'Submitted from ticket creation form.',
           },
         ],
+        comments: [],
       }
       return {
         ...state,
         tickets: [newTicket, ...state.tickets],
+      }
+    }
+    case 'ADD_TICKET_COMMENT': {
+      const { ticketId, author, role, message } = action.payload
+      const stamp = nowStamp()
+      return {
+        ...state,
+        tickets: state.tickets.map((ticket) => {
+          if (ticket.id !== ticketId) return ticket
+
+          const nextCommentId = `${ticketId}-C${ticket.comments.length + 1}`
+          const nextHistoryId = `${ticketId}-H${ticket.history.length + 1}`
+          const cleanMessage = message.trim()
+
+          if (!cleanMessage) return ticket
+
+          return {
+            ...ticket,
+            updated: 'just now',
+            comments: [
+              ...ticket.comments,
+              {
+                id: nextCommentId,
+                at: stamp,
+                author,
+                role: role === 'support' ? 'support' : 'user',
+                message: cleanMessage,
+              },
+            ],
+            history: [
+              ...ticket.history,
+              {
+                id: nextHistoryId,
+                at: stamp,
+                actor: author,
+                action: 'Comment added',
+                note: cleanMessage.length > 80 ? `${cleanMessage.slice(0, 80)}...` : cleanMessage,
+              },
+            ],
+          }
+        }),
+      }
+    }
+    case 'UPDATE_TICKET_STATUS': {
+      const { ticketId, status, actor } = action.payload
+      const stamp = nowStamp()
+      return {
+        ...state,
+        tickets: state.tickets.map((ticket) => {
+          if (ticket.id !== ticketId || ticket.status === status) return ticket
+
+          return {
+            ...ticket,
+            status,
+            updated: 'just now',
+            history: [
+              ...ticket.history,
+              {
+                id: `${ticketId}-H${ticket.history.length + 1}`,
+                at: stamp,
+                actor,
+                action: `Status changed to ${String(status).charAt(0).toUpperCase()}${String(status).slice(1)}`,
+                note: '',
+              },
+            ],
+          }
+        }),
       }
     }
     default:
@@ -345,6 +470,16 @@ export function AppStateProvider({ children }) {
         dispatch({
           type: 'CREATE_TICKET',
           payload: { title, category, description, attachments, requester },
+        }),
+      addTicketComment: ({ ticketId, author, role, message }) =>
+        dispatch({
+          type: 'ADD_TICKET_COMMENT',
+          payload: { ticketId, author, role, message },
+        }),
+      updateTicketStatus: ({ ticketId, status, actor }) =>
+        dispatch({
+          type: 'UPDATE_TICKET_STATUS',
+          payload: { ticketId, status, actor },
         }),
     }
   }, [state.isAuthenticated, state.tickets, state.user])
