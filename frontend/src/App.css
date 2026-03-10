@@ -158,6 +158,12 @@
   color: #2f5067;
 }
 
+.primary-btn:disabled,
+.secondary-btn:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
 .primary-btn.full {
   width: 100%;
 }
@@ -251,6 +257,23 @@
 .table-link-btn {
   padding: 0;
   text-decoration: underline;
+}
+
+.tickets-search {
+  margin-bottom: 0.55rem;
+  display: grid;
+  gap: 0.24rem;
+  color: #5f7d92;
+  font-size: 0.82rem;
+}
+
+.tickets-search input {
+  border: 1px solid #cfdae5;
+  border-radius: 9px;
+  padding: 0.5rem 0.56rem;
+  font: inherit;
+  color: #2a4e68;
+  background: #f9fcff;
 }
 
 .table-wrap {
@@ -388,6 +411,64 @@ tbody tr:hover {
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.premium-card {
+  border-style: dashed;
+  border-color: #bdd7ec;
+  background:
+    radial-gradient(circle at 86% 12%, rgba(71, 166, 227, 0.2), transparent 34%),
+    radial-gradient(circle at 12% 16%, rgba(75, 202, 149, 0.12), transparent 35%),
+    #ffffff;
+}
+
+.premium-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.premium-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid #c4d8e8;
+  background: #f3f8fd;
+  color: #31556f;
+  padding: 0.17rem 0.56rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.premium-badge.active {
+  border-color: #0f7a47;
+  background: #d7f0e1;
+  color: #0f6b40;
+}
+
+.premium-text,
+.premium-wallet,
+.premium-note {
+  margin: 0 0 0.36rem;
+  color: #395d73;
+}
+
+.premium-wallet {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+}
+
+.premium-note {
+  color: #466a80;
+  font-size: 0.84rem;
+}
+
+.premium-actions {
+  margin-top: 0.55rem;
+  display: grid;
+  gap: 0.42rem;
 }
 
 .account-layout {
@@ -774,6 +855,18 @@ tbody tr:hover {
   margin: 0;
   color: #2c5b79;
   font-size: 0.88rem;
+}
+
+.form-message.success {
+  color: #2c5b79;
+}
+
+.form-message.error {
+  color: #ba3838;
+}
+
+.ticket-limit-hint {
+  margin: 0;
 }
 
 .auth-submit {
