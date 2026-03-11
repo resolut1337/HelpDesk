@@ -1,11 +1,19 @@
-﻿import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import './App.css'
 import { useAppState } from './context/useAppState.js'
+import {
+  buyPremiumStatus,
+  connectWallet,
+  getConnectedWalletAddress,
+  getPremiumStatus,
+  isWalletAvailable,
+  premiumConfig,
+} from './utilities/blockchainUtils.js'
 
 const navItems = [
-  { id: 'home', path: '/', label: 'Р“РѕР»РѕРІРЅР°' },
-  { id: 'account', path: '/account', label: 'РђРєР°СѓРЅС‚' },
+  { id: 'home', path: '/', label: 'Головна' },
+  { id: 'account', path: '/account', label: 'Акаунт' },
 ]
 
 const statusLabels = {
@@ -60,6 +68,7 @@ const initialTicketForm = {
 const maxFiles = 5
 const maxFileSizeMb = 10
 const maxFileSizeBytes = maxFileSizeMb * 1024 * 1024
+const FREE_TICKET_LIMIT = 10
 
 function getInitials(name) {
   return name
@@ -68,6 +77,13 @@ function getInitials(name) {
     .slice(0, 2)
     .map((chunk) => chunk[0]?.toUpperCase() ?? '')
     .join('') || 'HD'
+}
+
+function shortWalletAddress(address) {
+  if (!address || address.length < 12) {
+    return address
+  }
+  return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
 function validateEmail(email) {
@@ -159,10 +175,11 @@ function validateTicketForm(form) {
   return errors
 }
 
-function TicketCreationForm({ onCreateTicket }) {
+function TicketCreationForm({ onCreateTicket, canCreateTicket, createBlockedMessage }) {
   const [form, setForm] = useState(initialTicketForm)
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState('')
+  const [messageTone, setMessageTone] = useState('success')
   const fileInputRef = useRef(null)
 
   const handleChange = (event) => {
@@ -170,6 +187,7 @@ function TicketCreationForm({ onCreateTicket }) {
     setForm((prev) => ({ ...prev, [name]: value }))
     setErrors((prev) => ({ ...prev, [name]: '' }))
     setMessage('')
+    setMessageTone('success')
   }
 
   const handleFileChange = (event) => {
@@ -177,15 +195,23 @@ function TicketCreationForm({ onCreateTicket }) {
     setForm((prev) => ({ ...prev, files }))
     setErrors((prev) => ({ ...prev, files: '' }))
     setMessage('')
+    setMessageTone('success')
   }
 
   const handleSubmit = (event) => {
     event.preventDefault()
+
+    if (!canCreateTicket) {
+      setMessage(createBlockedMessage)
+      setMessageTone('error')
+      return
+    }
+
     const validationErrors = validateTicketForm(form)
     setErrors(validationErrors)
     if (Object.keys(validationErrors).length > 0) return
 
-    onCreateTicket({
+    const result = onCreateTicket({
       title: form.subject.trim(),
       category: form.category,
       description: form.description.trim(),
@@ -195,7 +221,14 @@ function TicketCreationForm({ onCreateTicket }) {
       })),
     })
 
-    setMessage('Ticket was created successfully.')
+    if (!result?.ok) {
+      setMessage(result?.message || 'Unable to create ticket right now.')
+      setMessageTone('error')
+      return
+    }
+
+    setMessage(result.message || 'Ticket was created successfully.')
+    setMessageTone('success')
     setForm(initialTicketForm)
     setErrors({})
     if (fileInputRef.current) fileInputRef.current.value = ''
@@ -272,9 +305,13 @@ function TicketCreationForm({ onCreateTicket }) {
           ) : null}
         </label>
 
-        {message ? <p className="form-message">{message}</p> : null}
+        {!canCreateTicket ? <p className="field-error ticket-limit-hint">{createBlockedMessage}</p> : null}
 
-        <button type="submit" className="primary-btn ticket-submit">
+        {message ? (
+          <p className={`form-message ${messageTone === 'error' ? 'error' : 'success'}`}>{message}</p>
+        ) : null}
+
+        <button type="submit" className="primary-btn ticket-submit" disabled={!canCreateTicket}>
           Create ticket
         </button>
       </form>
@@ -282,8 +319,33 @@ function TicketCreationForm({ onCreateTicket }) {
   )
 }
 
-function HomeView({ onOpenAccount, onOpenTicketDetails, tickets, user, onCreateTicket }) {
+function HomeView({
+  onOpenAccount,
+  onOpenTicketDetails,
+  tickets,
+  user,
+  onCreateTicket,
+  canCreateTicket,
+  createBlockedMessage,
+  userTicketCount,
+  freeTicketLimit,
+  remainingTicketSlots,
+  isPremiumUser,
+  walletAddress,
+  blockchainReady,
+  premiumBusy,
+  premiumNotice,
+  premiumPriceEth,
+  onConnectWallet,
+  onBuyPremium,
+}) {
   const ticketFormRef = useRef(null)
+  const [titleQuery, setTitleQuery] = useState('')
+
+  const normalizedQuery = titleQuery.trim().toLowerCase()
+  const filteredTickets = normalizedQuery
+    ? tickets.filter((ticket) => ticket.title.toLowerCase().includes(normalizedQuery))
+    : tickets
 
   const focusTicketForm = () => {
     requestAnimationFrame(() => {
@@ -312,7 +374,11 @@ function HomeView({ onOpenAccount, onOpenTicketDetails, tickets, user, onCreateT
         </article>
 
         <div ref={ticketFormRef}>
-          <TicketCreationForm onCreateTicket={onCreateTicket} />
+          <TicketCreationForm
+            onCreateTicket={onCreateTicket}
+            canCreateTicket={canCreateTicket}
+            createBlockedMessage={createBlockedMessage}
+          />
         </div>
 
         <article className="panel-card">
@@ -326,11 +392,20 @@ function HomeView({ onOpenAccount, onOpenTicketDetails, tickets, user, onCreateT
 
         <article className="panel-card">
           <div className="panel-header">
-            <h2>Recent tickets</h2>
+          <h2>Останні тікети</h2>
             <button type="button" className="link-btn">
               View all
             </button>
           </div>
+          <label className="tickets-search">
+            <span>Пошук за заголовком</span>
+            <input
+              type="search"
+              value={titleQuery}
+              onChange={(event) => setTitleQuery(event.target.value)}
+              placeholder="Введіть заголовок тікета..."
+            />
+          </label>
           <div className="table-wrap">
             <table>
               <thead>
@@ -344,14 +419,16 @@ function HomeView({ onOpenAccount, onOpenTicketDetails, tickets, user, onCreateT
                 </tr>
               </thead>
               <tbody>
-                {tickets.length === 0 && (
+                {filteredTickets.length === 0 && (
                   <tr>
                     <td className="empty-row" colSpan="6">
-                      No tickets yet. New requests will appear here.
+                      {tickets.length === 0
+                        ? 'Тікетів ще немає. Нові заявки зʼявляться тут.'
+                        : 'За цим запитом тікети не знайдено.'}
                     </td>
                   </tr>
                 )}
-                {tickets.map((ticket) => {
+                {filteredTickets.map((ticket) => {
                   const statusKey = ticket.status.toLowerCase()
                   const statusText = statusLabels[statusKey] ?? ticket.status
 
@@ -383,6 +460,52 @@ function HomeView({ onOpenAccount, onOpenTicketDetails, tickets, user, onCreateT
       </section>
 
       <aside className="side-column">
+        <article className="panel-card premium-card">
+          <div className="premium-row">
+            <h3>Blockchain підписка</h3>
+            <span className={isPremiumUser ? 'premium-badge active' : 'premium-badge'}>
+              {isPremiumUser ? 'Premium' : 'Free'}
+            </span>
+          </div>
+          <p className="premium-text">
+            {isPremiumUser
+              ? 'Підписка активна. Доступна необмежена кількість тікетів.'
+              : `Без підписки доступно до ${freeTicketLimit} тікетів.`}
+          </p>
+          <p className="premium-text">
+            Ваші тікети: {userTicketCount}
+            {isPremiumUser ? ' (без ліміту)' : ` / ${freeTicketLimit}`}
+          </p>
+          {!isPremiumUser ? <p className="premium-text">Залишилось: {remainingTicketSlots}</p> : null}
+          <p className="premium-wallet">
+            {walletAddress ? `Гаманець: ${shortWalletAddress(walletAddress)}` : 'Гаманець не підключено'}
+          </p>
+          {premiumNotice ? <p className="premium-note">{premiumNotice}</p> : null}
+          <div className="premium-actions">
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={onConnectWallet}
+              disabled={premiumBusy || !blockchainReady}
+            >
+              {walletAddress ? 'Перепідключити MetaMask' : 'Підключити MetaMask'}
+            </button>
+            {!isPremiumUser ? (
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={onBuyPremium}
+                disabled={premiumBusy || !blockchainReady}
+              >
+                {premiumBusy ? 'Обробка...' : `Купити Premium (${premiumPriceEth} ETH)`}
+              </button>
+            ) : null}
+          </div>
+          {!blockchainReady ? (
+            <p className="field-error">Встановіть MetaMask, щоб купувати та перевіряти підписку.</p>
+          ) : null}
+        </article>
+
         <article className="panel-card account-preview">
           <div className="profile-row">
             <div className="avatar">{getInitials(user.fullName)}</div>
@@ -754,11 +877,11 @@ function AuthPage({
     <div className="auth-shell">
       <article className="auth-card">
         <p className="eyebrow">HelpDesk Access</p>
-        <h1>{isLogin ? 'Р’С…С–Рґ' : 'Р РµС”СЃС‚СЂР°С†С–СЏ'}</h1>
+        <h1>{isLogin ? 'Вхід' : 'Реєстрація'}</h1>
         <p className="auth-subtitle">
           {isLogin
-            ? 'РЈРІС–Р№РґС–С‚СЊ Сѓ СЃРёСЃС‚РµРјСѓ Р·Р° РґРѕРїРѕРјРѕРіРѕСЋ email С‚Р° РїР°СЂРѕР»СЏ.'
-            : 'РЎС‚РІРѕСЂС–С‚СЊ Р°РєР°СѓРЅС‚ РґР»СЏ РґРѕСЃС‚СѓРїСѓ РґРѕ Р·Р°СЏРІРѕРє С– РїСЂРѕС„С–Р»СЋ.'}
+            ? 'Увійдіть у систему за допомогою email та пароля.'
+            : 'Створіть акаунт для доступу до тікетів і профілю.'}
         </p>
 
         <div className="auth-tabs" role="tablist" aria-label="Authentication mode">
@@ -767,14 +890,14 @@ function AuthPage({
             className={isLogin ? 'auth-tab active' : 'auth-tab'}
             onClick={() => setAuthMode('login')}
           >
-            Р’С…С–Рґ
+            Вхід
           </button>
           <button
             type="button"
             className={!isLogin ? 'auth-tab active' : 'auth-tab'}
             onClick={() => setAuthMode('register')}
           >
-            Р РµС”СЃС‚СЂР°С†С–СЏ
+            Реєстрація
           </button>
         </div>
 
@@ -809,7 +932,7 @@ function AuthPage({
             {formMessage ? <p className="form-message">{formMessage}</p> : null}
 
             <button type="submit" className="primary-btn auth-submit">
-              РЈРІС–Р№С‚Рё
+              Увійти
             </button>
           </form>
         ) : (
@@ -871,7 +994,7 @@ function AuthPage({
             {formMessage ? <p className="form-message">{formMessage}</p> : null}
 
             <button type="submit" className="primary-btn auth-submit">
-              РЎС‚РІРѕСЂРёС‚Рё Р°РєР°СѓРЅС‚
+              Створити акаунт
             </button>
           </form>
         )}
@@ -965,6 +1088,162 @@ function App() {
   const [loginErrors, setLoginErrors] = useState({})
   const [registerErrors, setRegisterErrors] = useState({})
   const [formMessage, setFormMessage] = useState('')
+  const [walletAddress, setWalletAddress] = useState('')
+  const [isPremiumUser, setIsPremiumUser] = useState(false)
+  const [premiumBusy, setPremiumBusy] = useState(false)
+  const [premiumNotice, setPremiumNotice] = useState('')
+
+  const blockchainReady = isWalletAvailable()
+  const userTicketCount = useMemo(() => {
+    const requesterEmail = String(user?.email ?? '').toLowerCase()
+    return tickets.filter((ticket) => String(ticket.requester ?? '').toLowerCase() === requesterEmail).length
+  }, [tickets, user?.email])
+  const remainingTicketSlots = Math.max(0, FREE_TICKET_LIMIT - userTicketCount)
+  const canCreateTicket = isPremiumUser || remainingTicketSlots > 0
+  const createBlockedMessage = `Without subscription you can create up to ${FREE_TICKET_LIMIT} tickets. Buy Premium to remove this limit.`
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const refreshWalletPremium = async () => {
+      if (!isAuthenticated) {
+        if (isCancelled) return
+        setWalletAddress('')
+        setIsPremiumUser(false)
+        setPremiumNotice('')
+        setPremiumBusy(false)
+        return
+      }
+
+      if (!blockchainReady) {
+        if (isCancelled) return
+        setWalletAddress('')
+        setIsPremiumUser(false)
+        setPremiumNotice('MetaMask was not found. Free plan is limited to 10 tickets.')
+        setPremiumBusy(false)
+        return
+      }
+
+      setPremiumBusy(true)
+      const walletResult = await getConnectedWalletAddress()
+
+      if (isCancelled) return
+
+      if (!walletResult.ok) {
+        setWalletAddress('')
+        setIsPremiumUser(false)
+        setPremiumNotice(walletResult.error)
+        setPremiumBusy(false)
+        return
+      }
+
+      if (!walletResult.address) {
+        setWalletAddress('')
+        setIsPremiumUser(false)
+        setPremiumNotice('Connect MetaMask to check subscription status.')
+        setPremiumBusy(false)
+        return
+      }
+
+      setWalletAddress(walletResult.address)
+
+      const premiumResult = await getPremiumStatus(walletResult.address)
+      if (isCancelled) return
+
+      if (!premiumResult.ok) {
+        setIsPremiumUser(false)
+        setPremiumNotice(premiumResult.error)
+        setPremiumBusy(false)
+        return
+      }
+
+      setIsPremiumUser(premiumResult.isPremium)
+      setPremiumNotice(
+        premiumResult.isPremium
+          ? 'Premium is active. Ticket creation limit is removed.'
+          : 'Wallet connected. You can buy Premium for unlimited tickets.',
+      )
+      setPremiumBusy(false)
+    }
+
+    refreshWalletPremium()
+
+    return () => {
+      isCancelled = true
+    }
+  }, [blockchainReady, isAuthenticated, user?.email])
+
+  const handleConnectWallet = async () => {
+    if (!blockchainReady) {
+      setPremiumNotice('MetaMask is not installed.')
+      return
+    }
+
+    setPremiumBusy(true)
+    const walletResult = await connectWallet()
+
+    if (!walletResult.ok) {
+      setWalletAddress('')
+      setIsPremiumUser(false)
+      setPremiumNotice(walletResult.error)
+      setPremiumBusy(false)
+      return
+    }
+
+    setWalletAddress(walletResult.address)
+
+    const premiumResult = await getPremiumStatus(walletResult.address)
+    if (!premiumResult.ok) {
+      setIsPremiumUser(false)
+      setPremiumNotice(premiumResult.error)
+      setPremiumBusy(false)
+      return
+    }
+
+    setIsPremiumUser(premiumResult.isPremium)
+    setPremiumNotice(
+      premiumResult.isPremium
+        ? 'Premium is active. You can create unlimited tickets.'
+        : 'Wallet connected. Now you can buy Premium.',
+    )
+    setPremiumBusy(false)
+  }
+
+  const handleBuyPremium = async () => {
+    if (!blockchainReady) {
+      setPremiumNotice('MetaMask is not installed.')
+      return
+    }
+
+    setPremiumBusy(true)
+    const buyResult = await buyPremiumStatus()
+
+    if (!buyResult.ok) {
+      setPremiumNotice(buyResult.error)
+      setPremiumBusy(false)
+      return
+    }
+
+    if (buyResult.address) {
+      setWalletAddress(buyResult.address)
+    }
+
+    const premiumResult = await getPremiumStatus(buyResult.address)
+    if (!premiumResult.ok) {
+      setIsPremiumUser(false)
+      setPremiumNotice(premiumResult.error)
+      setPremiumBusy(false)
+      return
+    }
+
+    setIsPremiumUser(premiumResult.isPremium)
+    setPremiumNotice(
+      premiumResult.isPremium
+        ? 'Subscription activated. Ticket limit removed.'
+        : 'Transaction completed but status has not updated yet. Please check again.',
+    )
+    setPremiumBusy(false)
+  }
 
   const handleLoginChange = (event) => {
     const { name, value } = event.target
@@ -1020,6 +1299,13 @@ function App() {
   }
 
   const handleCreateTicket = ({ title, category, description, attachments }) => {
+    if (!isPremiumUser && userTicketCount >= FREE_TICKET_LIMIT) {
+      return {
+        ok: false,
+        message: createBlockedMessage,
+      }
+    }
+
     createTicket({
       title,
       category,
@@ -1028,6 +1314,10 @@ function App() {
       requester: user.email,
     })
     navigate('/', { replace: true })
+    return {
+      ok: true,
+      message: 'Тікет успішно створено.',
+    }
   }
 
   const handleLogout = () => {
@@ -1037,6 +1327,10 @@ function App() {
     setLoginErrors({})
     setRegisterErrors({})
     setFormMessage('You have signed out.')
+    setWalletAddress('')
+    setIsPremiumUser(false)
+    setPremiumBusy(false)
+    setPremiumNotice('')
     navigate('/login', { replace: true })
   }
 
@@ -1114,6 +1408,19 @@ function App() {
                 tickets={tickets}
                 user={user}
                 onCreateTicket={handleCreateTicket}
+                canCreateTicket={canCreateTicket}
+                createBlockedMessage={createBlockedMessage}
+                userTicketCount={userTicketCount}
+                freeTicketLimit={FREE_TICKET_LIMIT}
+                remainingTicketSlots={remainingTicketSlots}
+                isPremiumUser={isPremiumUser}
+                walletAddress={walletAddress}
+                blockchainReady={blockchainReady}
+                premiumBusy={premiumBusy}
+                premiumNotice={premiumNotice}
+                premiumPriceEth={premiumConfig.priceEth}
+                onConnectWallet={handleConnectWallet}
+                onBuyPremium={handleBuyPremium}
               />
             }
           />
