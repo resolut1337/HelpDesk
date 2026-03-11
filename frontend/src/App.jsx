@@ -17,10 +17,13 @@ const navItems = [
 ]
 
 const statusLabels = {
-  open: 'Open',
-  pending: 'Pending',
+  new: 'New',
+  in_progress: 'In Progress',
   resolved: 'Resolved',
   closed: 'Closed',
+  // legacy
+  open: 'Open',
+  pending: 'Pending',
 }
 
 const steps = [
@@ -37,22 +40,15 @@ const profileActivity = [
   'Role was changed to Support Agent.',
 ]
 
-const ticketCategories = [
-  'Access Issues',
-  'Billing',
-  'Software Bug',
-  'Hardware',
-  'Network',
-  'Other',
-]
+// ticketCategories тепер завантажуються з API (передаються як prop)
 
 const initialLoginForm = {
-  email: '',
+  username: '',
   password: '',
 }
 
 const initialRegisterForm = {
-  fullName: '',
+  username: '',
   email: '',
   password: '',
   confirmPassword: '',
@@ -100,10 +96,8 @@ function validatePassword(password) {
 function validateLoginForm(form) {
   const errors = {}
 
-  if (!form.email.trim()) {
-    errors.email = 'Email is required.'
-  } else if (!validateEmail(form.email.trim())) {
-    errors.email = 'Enter a valid email address.'
+  if (!form.username.trim()) {
+    errors.username = 'Username is required.'
   }
 
   if (!form.password) {
@@ -116,10 +110,10 @@ function validateLoginForm(form) {
 function validateRegisterForm(form) {
   const errors = {}
 
-  if (!form.fullName.trim()) {
-    errors.fullName = 'Full name is required.'
-  } else if (form.fullName.trim().length < 3) {
-    errors.fullName = 'Full name must be at least 3 characters long.'
+  if (!form.username.trim()) {
+    errors.username = 'Username is required.'
+  } else if (form.username.trim().length < 3) {
+    errors.username = 'Username must be at least 3 characters long.'
   }
 
   if (!form.email.trim()) {
@@ -198,7 +192,7 @@ function TicketCreationForm({ onCreateTicket, canCreateTicket, createBlockedMess
     setMessageTone('success')
   }
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault()
 
     if (!canCreateTicket) {
@@ -215,10 +209,7 @@ function TicketCreationForm({ onCreateTicket, canCreateTicket, createBlockedMess
       title: form.subject.trim(),
       category: form.category,
       description: form.description.trim(),
-      attachments: form.files.map((file) => ({
-        name: file.name,
-        sizeKb: Math.max(1, Math.round(file.size / 1024)),
-      })),
+      files: form.files,
     })
 
     if (!result?.ok) {
@@ -231,6 +222,7 @@ function TicketCreationForm({ onCreateTicket, canCreateTicket, createBlockedMess
     setMessageTone('success')
     setForm(initialTicketForm)
     setErrors({})
+    setUploading(false)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -260,9 +252,9 @@ function TicketCreationForm({ onCreateTicket, canCreateTicket, createBlockedMess
             aria-invalid={Boolean(errors.category)}
           >
             <option value="">Choose category</option>
-            {ticketCategories.map((category) => (
-              <option key={category} value={category}>
-                {category}
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>
+                {cat.name}
               </option>
             ))}
           </select>
@@ -378,6 +370,7 @@ function HomeView({
             onCreateTicket={onCreateTicket}
             canCreateTicket={canCreateTicket}
             createBlockedMessage={createBlockedMessage}
+            categories={categories
           />
         </div>
 
@@ -392,20 +385,37 @@ function HomeView({
 
         <article className="panel-card">
           <div className="panel-header">
-          <h2>Останні тікети</h2>
-            <button type="button" className="link-btn">
-              View all
+            <h2>Recent tickets</h2>
+            <button type="button" className="link-btn" onClick={handleResetFilters}>
+              Reset filters
             </button>
           </div>
-          <label className="tickets-search">
-            <span>Пошук за заголовком</span>
+
+          <div className="ticket-filters">
             <input
               type="search"
-              value={titleQuery}
-              onChange={(event) => setTitleQuery(event.target.value)}
-              placeholder="Введіть заголовок тікета..."
+              placeholder="Search tickets..."
+              value={search}
+              onChange={handleSearchChange}
+              className="filter-search"
             />
-          </label>
+            <select name="status" value={filters.status} onChange={handleFilterChange} className="filter-select">
+              {FILTER_STATUSES.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <select name="priority" value={filters.priority} onChange={handleFilterChange} className="filter-select">
+              {FILTER_PRIORITIES.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <select name="ordering" value={filters.ordering} onChange={handleFilterChange} className="filter-select">
+              {FILTER_ORDERING.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="table-wrap">
             <table>
               <thead>
@@ -511,7 +521,7 @@ function HomeView({
             <div className="avatar">{getInitials(user.fullName)}</div>
             <div>
               <p className="name">{user.fullName}</p>
-              <p className="role">Support Agent</p>
+              <p className="role">{user.roleDisplay}</p>
             </div>
           </div>
           <dl className="info-list">
@@ -519,14 +529,18 @@ function HomeView({
               <dt>Email</dt>
               <dd>{user.email}</dd>
             </div>
-            <div>
-              <dt>Team</dt>
-              <dd>Support 1st line</dd>
-            </div>
-            <div>
-              <dt>Time zone</dt>
-              <dd>UTC+02:00</dd>
-            </div>
+            {user.department && (
+              <div>
+                <dt>Department</dt>
+                <dd>{user.department}</dd>
+              </div>
+            )}
+            {user.phone && (
+              <div>
+                <dt>Phone</dt>
+                <dd>{user.phone}</dd>
+              </div>
+            )}
           </dl>
           <button type="button" className="primary-btn full" onClick={onOpenAccount}>
             Open account
@@ -539,9 +553,17 @@ function HomeView({
             <button type="button" onClick={focusTicketForm}>
               New ticket
             </button>
-            <button type="button">My tickets</button>
-            <button type="button">Profile settings</button>
-            <button type="button">Support docs</button>
+            <button type="button" onClick={() => {
+              setFilters({ status: '', priority: '', ordering: '-created_at', search: '', my: true })
+            }}>
+              My tickets
+            </button>
+            <button type="button" onClick={onOpenAccount}>
+              Profile settings
+            </button>
+            <button type="button" onClick={() => window.open('https://docs.helpdesk.local', '_blank')}>
+              Support docs
+            </button>
           </div>
         </article>
       </aside>
@@ -549,10 +571,30 @@ function HomeView({
   )
 }
 
-function TicketDetailView({ ticket, currentUser, onBack, onSendComment, onChangeStatus }) {
+function TicketDetailView({ ticket, currentUser, onBack, onSendComment, onChangeStatus, onUploadAttachment, onDeleteAttachment, onDeleteComment }) {
   const [commentBody, setCommentBody] = useState('')
-  const [commentRole, setCommentRole] = useState('user')
+  const [isInternal, setIsInternal] = useState(false)
   const [commentError, setCommentError] = useState('')
+  const [commentSending, setCommentSending] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(null)
+  const [uploadError, setUploadError] = useState('')
+  const fileInputRef = useRef(null)
+
+  const handleFileUpload = async (event) => {
+    const files = Array.from(event.target.files || [])
+    if (!files.length) return
+    setUploadError('')
+    for (const file of files) {
+      setUploadProgress(0)
+      const result = await onUploadAttachment(ticket.id, file, (pct) => setUploadProgress(pct))
+      if (!result.ok) {
+        setUploadError(result.error)
+        break
+      }
+    }
+    setUploadProgress(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
 
   if (!ticket) {
     return (
@@ -571,31 +613,25 @@ function TicketDetailView({ ticket, currentUser, onBack, onSendComment, onChange
   const statusKey = ticket.status.toLowerCase()
   const statusText = statusLabels[statusKey] ?? ticket.status
   const canSubmitComment = commentBody.trim().length > 0
-  const statusOptions = ['open', 'pending', 'resolved', 'closed']
-  const isStaff = Boolean(currentUser?.isStaff)
+  const statusOptions = ['new', 'in_progress', 'resolved', 'closed']
+  const isStaff = Boolean(currentUser?.isSupport || currentUser?.isStaff || currentUser?.role === 'admin')
 
-  const handleCommentSubmit = (event) => {
+  const handleCommentSubmit = async (event) => {
     event.preventDefault()
     const body = commentBody.trim()
     if (!body) {
       setCommentError('Comment message is required.')
       return
     }
-
-    const author =
-      commentRole === 'support'
-        ? 'Support Agent'
-        : currentUser?.fullName?.trim() || currentUser?.email || 'User'
-
-    onSendComment({
+    setCommentSending(true)
+    await onSendComment({
       ticketId: ticket.id,
-      author,
-      role: commentRole,
+      isInternal,
       message: body,
     })
-
     setCommentBody('')
     setCommentError('')
+    setCommentSending(false)
   }
 
   return (
@@ -639,6 +675,7 @@ function TicketDetailView({ ticket, currentUser, onBack, onSendComment, onChange
         </dl>
 
         <article className="ticket-section">
+
           <h2>Description</h2>
           <p>{ticket.description}</p>
         </article>
@@ -683,13 +720,38 @@ function TicketDetailView({ ticket, currentUser, onBack, onSendComment, onChange
           ) : (
             <ul className="attachment-list">
               {ticket.attachments.map((file) => (
-                <li key={`${ticket.id}-${file.name}`}>
-                  <span>{file.name}</span>
-                  <small>{file.sizeKb} KB</small>
+                <li key={file.id ?? `${ticket.id}-${file.original_name}`}>
+                  <a href={file.url} target="_blank" rel="noreferrer">
+                    {file.original_name ?? file.name}
+                  </a>
+                  <small>{file.size_kb ?? file.sizeKb} KB</small>
+                  {(currentUser?.isSupport || file.uploaded_by?.id === currentUser?.id) && (
+                    <button
+                      type="button"
+                      className="link-btn"
+                      onClick={() => onDeleteAttachment(ticket.id, file.id)}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
           )}
+          <div className="attachment-upload">
+            <label className="secondary-btn" style={{ cursor: 'pointer' }}>
+              {uploadProgress !== null ? `Uploading... ${uploadProgress}%` : 'Upload file'}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                style={{ display: 'none' }}
+                onChange={handleFileUpload}
+                disabled={uploadProgress !== null}
+              />
+            </label>
+            {uploadError && <span className="field-error">{uploadError}</span>}
+          </div>
         </article>
 
         <div className="ticket-actions">
@@ -726,45 +788,49 @@ function TicketDetailView({ ticket, currentUser, onBack, onSendComment, onChange
             {ticket.comments.map((comment) => (
               <li
                 key={comment.id}
-                className={
-                  comment.role === 'support'
-                    ? 'comment-item comment-support'
-                    : 'comment-item comment-user'
-                }
+                className={[
+                  'comment-item',
+                  comment.isInternal ? 'comment-support' : 'comment-user',
+                  comment.isInternal ? 'comment-internal' : '',
+                ].join(' ').trim()}
               >
                 <div className="comment-meta">
-                  <strong>{comment.author}</strong>
+                  <strong>
+                    {comment.authorName}
+                    {comment.isInternal && (
+                      <span className="badge-internal"> [internal]</span>
+                    )}
+                  </strong>
                   <small>{comment.at}</small>
+                  {(currentUser?.isSupport || comment.author?.id === currentUser?.id) && (
+                    <button
+                      type="button"
+                      className="link-btn"
+                      onClick={() => onDeleteComment(ticket.id, comment.id)}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
-                <p>{comment.message}</p>
+                <p>{comment.body}</p>
               </li>
             ))}
           </ul>
         )}
 
         <form className="comment-form" noValidate onSubmit={handleCommentSubmit}>
-          <div className="comment-role-row">
-            <label>
-              <input
-                type="radio"
-                name="commentRole"
-                value="user"
-                checked={commentRole === 'user'}
-                onChange={(event) => setCommentRole(event.target.value)}
-              />
-              User
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="commentRole"
-                value="support"
-                checked={commentRole === 'support'}
-                onChange={(event) => setCommentRole(event.target.value)}
-              />
-              Support
-            </label>
-          </div>
+          {currentUser?.isSupport && (
+            <div className="comment-role-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isInternal}
+                  onChange={(e) => setIsInternal(e.target.checked)}
+                />
+                Internal note (visible to support only)
+              </label>
+            </div>
+          )}
 
           <textarea
             value={commentBody}
@@ -778,8 +844,8 @@ function TicketDetailView({ ticket, currentUser, onBack, onSendComment, onChange
           />
           {commentError ? <span className="field-error">{commentError}</span> : null}
 
-          <button type="submit" className="primary-btn" disabled={!canSubmitComment}>
-            Send message
+          <button type="submit" className="primary-btn" disabled={!canSubmitComment || commentSending}>
+            {commentSending ? 'Sending...' : 'Send message'}
           </button>
         </form>
       </article>
@@ -795,11 +861,15 @@ function AccountView({ user }) {
           <div className="avatar large">{getInitials(user.fullName)}</div>
           <div>
             <h1>{user.fullName}</h1>
-            <p>Support Agent - Support Team 1</p>
+            <p>{user.roleDisplay}{user.department ? ` — ${user.department}` : ''}</p>
           </div>
         </div>
 
         <div className="form-grid">
+          <label>
+            Username
+            <input type="text" value={user.username} readOnly />
+          </label>
           <label>
             Full name
             <input type="text" value={user.fullName} readOnly />
@@ -810,11 +880,15 @@ function AccountView({ user }) {
           </label>
           <label>
             Phone
-            <input type="text" value={user.phone} readOnly />
+            <input type="text" value={user.phone || '—'} readOnly />
           </label>
           <label>
-            Time zone
-            <input type="text" value={user.timezone} readOnly />
+            Department
+            <input type="text" value={user.department || '—'} readOnly />
+          </label>
+          <label>
+            Role
+            <input type="text" value={user.roleDisplay} readOnly />
           </label>
         </div>
 
@@ -904,16 +978,16 @@ function AuthPage({
         {isLogin ? (
           <form className="auth-form" noValidate onSubmit={onLoginSubmit}>
             <label className="auth-field">
-              Email
+              Username
               <input
-                type="email"
-                name="email"
-                value={loginForm.email}
+                type="text"
+                name="username"
+                value={loginForm.username}
                 onChange={onLoginChange}
-                placeholder="you@company.com"
-                aria-invalid={Boolean(loginErrors.email)}
+                placeholder="your_username"
+                aria-invalid={Boolean(loginErrors.username)}
               />
-              {loginErrors.email && <span className="field-error">{loginErrors.email}</span>}
+              {loginErrors.username && <span className="field-error">{loginErrors.username}</span>}
             </label>
 
             <label className="auth-field">
@@ -938,16 +1012,16 @@ function AuthPage({
         ) : (
           <form className="auth-form" noValidate onSubmit={onRegisterSubmit}>
             <label className="auth-field">
-              Full name
+              Username
               <input
                 type="text"
-                name="fullName"
-                value={registerForm.fullName}
+                name="username"
+                value={registerForm.username}
                 onChange={onRegisterChange}
-                placeholder="Name Surname"
-                aria-invalid={Boolean(registerErrors.fullName)}
+                placeholder="your_username"
+                aria-invalid={Boolean(registerErrors.username)}
               />
-              {registerErrors.fullName && <span className="field-error">{registerErrors.fullName}</span>}
+              {registerErrors.username && <span className="field-error">{registerErrors.username}</span>}
             </label>
 
             <label className="auth-field">
@@ -1004,8 +1078,17 @@ function AuthPage({
 }
 
 function PrivateRoute() {
-  const { isAuthenticated } = useAppState()
+  const { isAuthenticated, userLoading } = useAppState()
   const location = useLocation()
+
+  // Чекаємо поки профіль завантажиться з API
+  if (userLoading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+        <p style={{ color: '#6b7280', fontSize: '1rem' }}>Loading...</p>
+      </div>
+    )
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location }} />
@@ -1027,7 +1110,7 @@ function ProtectedLayout({ user, onLogout }) {
           <span>HD</span>
           <div>
             <p>HelpDesk</p>
-            <small>{user.email}</small>
+            <small>{user.roleDisplay}</small>
           </div>
         </div>
 
@@ -1053,10 +1136,11 @@ function ProtectedLayout({ user, onLogout }) {
   )
 }
 
-function TicketDetailPage({ tickets, user, onSendComment, onChangeStatus }) {
+function TicketDetailPage({ tickets, user, onSendComment, onChangeStatus, onUploadAttachment, onDeleteAttachment, onDeleteComment }) {
   const { ticketId } = useParams()
   const navigate = useNavigate()
-  const ticket = tickets.find((item) => item.id === ticketId) ?? null
+  // id може бути числом або рядком — порівнюємо як рядки
+  const ticket = tickets.find((item) => String(item.id) === String(ticketId)) ?? null
 
   return (
     <TicketDetailView
@@ -1065,6 +1149,9 @@ function TicketDetailPage({ tickets, user, onSendComment, onChangeStatus }) {
       onBack={() => navigate('/')}
       onSendComment={onSendComment}
       onChangeStatus={onChangeStatus}
+      onUploadAttachment={onUploadAttachment}
+      onDeleteAttachment={onDeleteAttachment}
+      onDeleteComment={onDeleteComment}
     />
   )
 }
@@ -1074,12 +1161,17 @@ function App() {
     isAuthenticated,
     user,
     tickets,
+    categories,
     login,
     register,
     logout,
+    fetchTickets,
     createTicket,
-    addTicketComment,
-    updateTicketStatus,
+    updateTicket,
+    deleteAttachment,
+    uploadAttachment,
+    addComment,
+    removeComment,
   } = useAppState()
   const navigate = useNavigate()
   const location = useLocation()
@@ -1245,6 +1337,13 @@ function App() {
     setPremiumBusy(false)
   }
 
+  // Завантажити заявки після логіну (початкове завантаження без фільтрів)
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchTickets()
+    }
+  }, [isAuthenticated]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleLoginChange = (event) => {
     const { name, value } = event.target
     setLoginForm((prev) => ({ ...prev, [name]: value }))
@@ -1259,60 +1358,65 @@ function App() {
     setFormMessage('')
   }
 
-  const handleLoginSubmit = (event) => {
+  const handleLoginSubmit = async (event) => {
     event.preventDefault()
     const errors = validateLoginForm(loginForm)
     setLoginErrors(errors)
-
     if (Object.keys(errors).length > 0) return
 
-    const email = loginForm.email.trim().toLowerCase()
-    const fullName = email
-      .split('@')[0]
-      .replace(/[._-]/g, ' ')
-      .replace(/\b\w/g, (char) => char.toUpperCase())
+    const result = await login({
+      username: loginForm.username.trim(),
+      password: loginForm.password,
+    })
 
-    login({ email, fullName })
+    if (!result.ok) {
+      setFormMessage(result.error)
+      return
+    }
+
     setLoginForm(initialLoginForm)
     setFormMessage('')
-
     const fromPath = location.state?.from?.pathname
     const redirectPath =
       fromPath && fromPath !== '/login' && fromPath !== '/register' ? fromPath : '/'
     navigate(redirectPath, { replace: true })
   }
 
-  const handleRegisterSubmit = (event) => {
+  const handleRegisterSubmit = async (event) => {
     event.preventDefault()
     const errors = validateRegisterForm(registerForm)
     setRegisterErrors(errors)
-
     if (Object.keys(errors).length > 0) return
 
-    register({
-      fullName: registerForm.fullName.trim(),
+    const result = await register({
+      username: registerForm.username.trim(),
       email: registerForm.email.trim().toLowerCase(),
+      password: registerForm.password,
+      password2: registerForm.confirmPassword,
     })
+
+    if (!result.ok) {
+      setFormMessage(result.error)
+      return
+    }
+
     setRegisterForm(initialRegisterForm)
     setFormMessage('')
     navigate('/', { replace: true })
   }
 
-  const handleCreateTicket = ({ title, category, description, attachments }) => {
-    if (!isPremiumUser && userTicketCount >= FREE_TICKET_LIMIT) {
-      return {
-        ok: false,
-        message: createBlockedMessage,
+  const handleCreateTicket = async ({ title, category, description, files = [] }) => {
+    const result = await createTicket({ title, description, category: category || undefined })
+    if (!result.ok) {
+      setFormMessage(result.error)
+      return
+    }
+    // Завантажити вкладення якщо є
+    if (files.length > 0 && result.data?.id) {
+      for (const file of files) {
+        await uploadAttachment(result.data.id, file)
       }
     }
-
-    createTicket({
-      title,
-      category,
-      description,
-      attachments,
-      requester: user.email,
-    })
     navigate('/', { replace: true })
     return {
       ok: true,
@@ -1320,8 +1424,8 @@ function App() {
     }
   }
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     setLoginForm(initialLoginForm)
     setRegisterForm(initialRegisterForm)
     setLoginErrors({})
@@ -1334,16 +1438,16 @@ function App() {
     navigate('/login', { replace: true })
   }
 
-  const handleSendTicketComment = ({ ticketId, author, role, message }) => {
-    addTicketComment({ ticketId, author, role, message })
+  const handleSendTicketComment = async ({ ticketId, isInternal, message }) => {
+    await addComment(ticketId, { body: message, isInternal })
+  }
+
+  const handleDeleteComment = async (ticketId, commentId) => {
+    await removeComment(ticketId, commentId)
   }
 
   const handleTicketStatusChange = ({ ticketId, status }) => {
-    updateTicketStatus({
-      ticketId,
-      status,
-      actor: user?.fullName?.trim() || user?.email || 'Support Agent',
-    })
+    updateTicket(ticketId, { status })
   }
 
   return (
@@ -1408,6 +1512,8 @@ function App() {
                 tickets={tickets}
                 user={user}
                 onCreateTicket={handleCreateTicket}
+                onFetchTickets={fetchTickets}
+                categories={categories}
                 canCreateTicket={canCreateTicket}
                 createBlockedMessage={createBlockedMessage}
                 userTicketCount={userTicketCount}
@@ -1433,6 +1539,9 @@ function App() {
                 user={user}
                 onSendComment={handleSendTicketComment}
                 onChangeStatus={handleTicketStatusChange}
+                onUploadAttachment={uploadAttachment}
+                onDeleteAttachment={deleteAttachment}
+                onDeleteComment={handleDeleteComment}
               />
             }
           />
@@ -1445,6 +1554,3 @@ function App() {
 }
 
 export default App
-
-
-
